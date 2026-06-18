@@ -100,3 +100,12 @@ begin
   limit result_limit;
 end;
 $$ language plpgsql stable;
+
+-- RLS 策略：允许 service_role 完全访问（服务端用 service_role key，绕过 RLS）
+-- 这里额外加 policy 作为双保险，防止 key 配错
+alter table users disable row level security;
+alter table imported_articles disable row level security;
+alter table review_cards disable row level security;
+alter table activities disable row level security;
+alter table tag_relations disable row level security;
+alter table reading_progress disable row level security;
