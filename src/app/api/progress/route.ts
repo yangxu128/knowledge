@@ -9,7 +9,7 @@ export async function GET(request: Request) {
   if (!articleType || !articleId) return NextResponse.json({ error: '参数不完整' }, { status: 400 });
   const user = await getCurrentUser();
   if (!user) return NextResponse.json({ progress: null, guest: true });
-  return NextResponse.json({ progress: getReadingProgress(articleType, articleId) });
+  return NextResponse.json({ progress: await getReadingProgress(articleType, articleId) });
 }
 
 export async function POST(request: Request) {

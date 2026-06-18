@@ -1,25 +1,47 @@
-import Database from 'better-sqlite3';
-import path from 'path';
+import { createClient, SupabaseClient } from '@supabase/supabase-js';
 import bcrypt from 'bcryptjs';
-import fs from 'fs';
 
-const DB_PATH = path.join(process.cwd(), 'db', 'kb.db');
+const SUPABASE_URL = process.env.SUPABASE_URL || process.env.NEXT_PUBLIC_SUPABASE_URL || '';
+const SUPABASE_KEY = process.env.SUPABASE_SERVICE_ROLE_KEY || process.env.SUPABASE_ANON_KEY || '';
 
-let _db: Database.Database | null = null;
+if (!SUPABASE_URL || !SUPABASE_KEY) {
+  console.warn('[db] SUPABASE_URL / SUPABASE_SERVICE_ROLE_KEY 未配置，数据库功能不可用');
+}
 
-function safeParseTags(raw: string): string[] {
-  try { return JSON.parse(raw) || []; } catch { return []; }
+let _client: SupabaseClient | null = null;
+
+function getClient(): SupabaseClient {
+  if (_client) return _client;
+  if (!SUPABASE_URL || !SUPABASE_KEY) {
+    throw new Error('SUPABASE_URL 或 SUPABASE_SERVICE_ROLE_KEY 未配置');
+  }
+  _client = createClient(SUPABASE_URL, SUPABASE_KEY, {
+    auth: { persistSession: false },
+  });
+  return _client;
+}
+
+function safeParseTags(raw: unknown): string[] {
+  if (typeof raw === 'string') {
+    try { return JSON.parse(raw) || []; } catch { return []; }
+  }
+  if (Array.isArray(raw)) return raw.filter((t): t is string => typeof t === 'string');
+  return [];
+}
+
+function tagsToJson(tags: string[]): string {
+  return JSON.stringify(tags);
 }
 
 interface UserRow {
   id: number; username: string; password: string; role: string; created_at: string;
 }
 interface ImportedArticleRow {
-  id: number; title: string; content: string; tags: string; category: string;
+  id: number; title: string; content: string; tags: string | string[]; category: string;
   published: string; author: string; source: string; created_at: string;
 }
 interface ReviewCardRow {
-  id: number; title: string; description: string; tags: string; category: string;
+  id: number; title: string; description: string; tags: string | string[]; category: string;
   next_review: string; interval: number; ease_factor: number; repetitions: number;
 }
 interface ActivityRow {
@@ -30,135 +52,8 @@ interface TagRelationRow {
   id: number; tag_a: string; tag_b: string; relation_type: string;
   confidence: number; reason: string;
 }
-interface CountRow { c: number }
-interface TagsRow { tags: string }
 interface ReadingProgressRow {
   id: number; article_type: string; article_id: string; progress: number; updated_at: string;
-}
-
-function getDb(): Database.Database {
-  if (_db) return _db;
-  const dir = path.dirname(DB_PATH);
-  if (!fs.existsSync(dir)) fs.mkdirSync(dir, { recursive: true });
-  _db = new Database(DB_PATH);
-  _db.pragma('journal_mode = WAL');
-  _db.pragma('foreign_keys = ON');
-  initTables(_db);
-  return _db;
-}
-
-function initTables(db: Database.Database) {
-  db.exec(`
-    CREATE TABLE IF NOT EXISTS users (
-      id INTEGER PRIMARY KEY AUTOINCREMENT,
-      username TEXT UNIQUE NOT NULL,
-      password TEXT NOT NULL,
-      role TEXT NOT NULL DEFAULT 'viewer',
-      created_at TEXT NOT NULL DEFAULT (datetime('now'))
-    );
-
-    CREATE TABLE IF NOT EXISTS imported_articles (
-      id INTEGER PRIMARY KEY AUTOINCREMENT,
-      title TEXT NOT NULL,
-      content TEXT NOT NULL DEFAULT '',
-      tags TEXT NOT NULL DEFAULT '[]',
-      category TEXT NOT NULL DEFAULT '',
-      published TEXT NOT NULL DEFAULT '',
-      author TEXT NOT NULL DEFAULT '',
-      source TEXT NOT NULL DEFAULT '',
-      created_at TEXT NOT NULL DEFAULT (datetime('now'))
-    );
-
-    CREATE TABLE IF NOT EXISTS review_cards (
-      id INTEGER PRIMARY KEY AUTOINCREMENT,
-      title TEXT NOT NULL,
-      description TEXT NOT NULL DEFAULT '',
-      tags TEXT NOT NULL DEFAULT '[]',
-      category TEXT NOT NULL DEFAULT '',
-      next_review TEXT NOT NULL DEFAULT '',
-      interval INTEGER NOT NULL DEFAULT 1,
-      ease_factor REAL NOT NULL DEFAULT 2.5,
-      repetitions INTEGER NOT NULL DEFAULT 0
-    );
-
-    CREATE TABLE IF NOT EXISTS ai_tags (
-      id INTEGER PRIMARY KEY AUTOINCREMENT,
-      article_type TEXT NOT NULL DEFAULT 'imported',
-      article_id INTEGER NOT NULL,
-      tag TEXT NOT NULL,
-      UNIQUE(article_type, article_id, tag)
-    );
-
-    CREATE TABLE IF NOT EXISTS article_relations (
-      id INTEGER PRIMARY KEY AUTOINCREMENT,
-      source_type TEXT NOT NULL DEFAULT 'imported',
-      source_id INTEGER NOT NULL,
-      target_type TEXT NOT NULL DEFAULT 'imported',
-      target_id INTEGER NOT NULL,
-      relation_type TEXT NOT NULL DEFAULT 'related',
-      confidence REAL NOT NULL DEFAULT 0.5,
-      reason TEXT NOT NULL DEFAULT '',
-      UNIQUE(source_type, source_id, target_type, target_id, relation_type)
-    );
-
-    CREATE TABLE IF NOT EXISTS tag_relations (
-      id INTEGER PRIMARY KEY AUTOINCREMENT,
-      tag_a TEXT NOT NULL,
-      tag_b TEXT NOT NULL,
-      relation_type TEXT NOT NULL DEFAULT 'related',
-      confidence REAL NOT NULL DEFAULT 0.5,
-      reason TEXT NOT NULL DEFAULT '',
-      UNIQUE(tag_a, tag_b, relation_type)
-    );
-
-    CREATE TABLE IF NOT EXISTS activities (
-      id INTEGER PRIMARY KEY AUTOINCREMENT,
-      action TEXT NOT NULL,
-      article_type TEXT NOT NULL DEFAULT 'knowledge',
-      article_id TEXT NOT NULL DEFAULT '',
-      article_title TEXT NOT NULL DEFAULT '',
-      article_href TEXT NOT NULL DEFAULT '',
-      created_at TEXT NOT NULL DEFAULT (datetime('now'))
-    );
-
-    CREATE TABLE IF NOT EXISTS reading_progress (
-      id INTEGER PRIMARY KEY AUTOINCREMENT,
-      article_type TEXT NOT NULL,
-      article_id TEXT NOT NULL,
-      progress REAL NOT NULL DEFAULT 0,
-      updated_at TEXT NOT NULL DEFAULT (datetime('now')),
-      UNIQUE(article_type, article_id)
-    );
-
-    CREATE VIRTUAL TABLE IF NOT EXISTS articles_fts USING fts5(
-      article_type, article_id UNINDEXED, title, content, tags, category, author,
-      tokenize = 'unicode61'
-    );
-  `);
-
-  db.exec(`
-    CREATE TRIGGER IF NOT EXISTS imported_ai AFTER INSERT ON imported_articles BEGIN
-      INSERT INTO articles_fts(article_type, article_id, title, content, tags, category, author)
-      VALUES ('imported', new.id, new.title, new.content, new.tags, new.category, new.author);
-    END;
-    CREATE TRIGGER IF NOT EXISTS imported_ad AFTER DELETE ON imported_articles BEGIN
-      DELETE FROM articles_fts WHERE article_type='imported' AND article_id = old.id;
-    END;
-    CREATE TRIGGER IF NOT EXISTS imported_au AFTER UPDATE ON imported_articles BEGIN
-      DELETE FROM articles_fts WHERE article_type='imported' AND article_id = old.id;
-      INSERT INTO articles_fts(article_type, article_id, title, content, tags, category, author)
-      VALUES ('imported', new.id, new.title, new.content, new.tags, new.category, new.author);
-    END;
-  `);
-
-  const count = (db.prepare('SELECT COUNT(*) as c FROM users').get() as CountRow).c;
-  if (count === 0) {
-    db.prepare('INSERT INTO users (username, password, role) VALUES (?, ?, ?)').run(
-      'admin',
-      bcrypt.hashSync('admin123', 10),
-      'admin'
-    );
-  }
 }
 
 // --- Users ---
@@ -171,45 +66,58 @@ export interface User {
   createdAt: string;
 }
 
-export function getUsers(): User[] {
-  const rows = getDb().prepare('SELECT * FROM users').all() as UserRow[];
-  return rows.map(r => ({ id: r.id, username: r.username, password: r.password, role: r.role as User['role'], createdAt: r.created_at }));
+function mapUser(r: UserRow): User {
+  return { id: r.id, username: r.username, password: r.password, role: r.role as User['role'], createdAt: r.created_at };
 }
 
-export function findUser(username: string): User | undefined {
-  const row = getDb().prepare('SELECT * FROM users WHERE username = ?').get(username) as UserRow | undefined;
-  if (!row) return undefined;
-  return { id: row.id, username: row.username, password: row.password, role: row.role as User['role'], createdAt: row.created_at };
+export async function getUsers(): Promise<User[]> {
+  const { data, error } = await getClient().from('users').select('*');
+  if (error) throw error;
+  return (data as UserRow[]).map(mapUser);
 }
 
-export function countUsers(): number {
-  const row = getDb().prepare('SELECT COUNT(*) as c FROM users').get() as { c: number };
-  return row.c;
+export async function findUser(username: string): Promise<User | undefined> {
+  const { data, error } = await getClient().from('users').select('*').eq('username', username).maybeSingle();
+  if (error) throw error;
+  if (!data) return undefined;
+  return mapUser(data as UserRow);
 }
 
-export function createUser(username: string, password: string, role: User['role'] = 'viewer'): User {
+export async function countUsers(): Promise<number> {
+  const { count, error } = await getClient().from('users').select('*', { count: 'exact', head: true });
+  if (error) throw error;
+  return count || 0;
+}
+
+export async function createUser(username: string, password: string, role: User['role'] = 'viewer'): Promise<User> {
   const hash = bcrypt.hashSync(password, 10);
-  const result = getDb().prepare('INSERT INTO users (username, password, role) VALUES (?, ?, ?)').run(username, hash, role);
-  return { id: Number(result.lastInsertRowid), username, password: hash, role, createdAt: new Date().toISOString() };
+  const { data, error } = await getClient().from('users').insert({ username, password: hash, role }).select().single();
+  if (error) throw error;
+  return mapUser(data as UserRow);
 }
 
 export function verifyPassword(user: User, password: string): boolean {
   return bcrypt.compareSync(password, user.password);
 }
 
-export function updateUser(id: number, data: Partial<Pick<User, 'role' | 'password'>>): User | null {
-  const db = getDb();
-  const row = db.prepare('SELECT * FROM users WHERE id = ?').get(id) as UserRow | undefined;
+export async function updateUser(id: number, data: Partial<Pick<User, 'role' | 'password'>>): Promise<User | null> {
+  const update: Record<string, string> = {};
+  if (data.role) update.role = data.role;
+  if (data.password) update.password = bcrypt.hashSync(data.password, 10);
+  if (Object.keys(update).length === 0) {
+    const { data: row } = await getClient().from('users').select('*').eq('id', id).maybeSingle();
+    return row ? mapUser(row as UserRow) : null;
+  }
+  const { data: row, error } = await getClient().from('users').update(update).eq('id', id).select().single();
+  if (error) throw error;
   if (!row) return null;
-  if (data.role) db.prepare('UPDATE users SET role = ? WHERE id = ?').run(data.role, id);
-  if (data.password) db.prepare('UPDATE users SET password = ? WHERE id = ?').run(bcrypt.hashSync(data.password, 10), id);
-  const updated = db.prepare('SELECT * FROM users WHERE id = ?').get(id) as UserRow;
-  return { id: updated.id, username: updated.username, password: updated.password, role: updated.role as User['role'], createdAt: updated.created_at };
+  return mapUser(row as UserRow);
 }
 
-export function deleteUser(id: number): boolean {
-  const result = getDb().prepare('DELETE FROM users WHERE id = ?').run(id);
-  return result.changes > 0;
+export async function deleteUser(id: number): Promise<boolean> {
+  const { error } = await getClient().from('users').delete().eq('id', id);
+  if (error) throw error;
+  return true;
 }
 
 // --- Imported Articles ---
@@ -226,34 +134,57 @@ export interface ImportedArticle {
   createdAt: string;
 }
 
-export function getImportedArticles(): ImportedArticle[] {
-  const rows = getDb().prepare('SELECT * FROM imported_articles ORDER BY created_at DESC').all() as ImportedArticleRow[];
-  return rows.map(r => ({ id: r.id, title: r.title, content: r.content, tags: safeParseTags(r.tags), category: r.category, published: r.published, author: r.author, source: r.source, createdAt: r.created_at }));
+function mapImportedArticle(r: ImportedArticleRow): ImportedArticle {
+  return { id: r.id, title: r.title, content: r.content, tags: safeParseTags(r.tags), category: r.category, published: r.published, author: r.author, source: r.source, createdAt: r.created_at };
 }
 
-export function getImportedArticle(id: number): ImportedArticle | null {
-  const row = getDb().prepare('SELECT * FROM imported_articles WHERE id = ?').get(id) as ImportedArticleRow | undefined;
-  if (!row) return null;
-  return { id: row.id, title: row.title, content: row.content, tags: safeParseTags(row.tags), category: row.category, published: row.published, author: row.author, source: row.source, createdAt: row.created_at };
+export async function getImportedArticles(): Promise<ImportedArticle[]> {
+  const { data, error } = await getClient().from('imported_articles').select('*').order('created_at', { ascending: false });
+  if (error) throw error;
+  return (data as ImportedArticleRow[]).map(mapImportedArticle);
 }
 
-export function createImportedArticle(article: { title: string; content: string; tags: string[]; category: string; published: string; author: string; source: string }): ImportedArticle {
-  const result = getDb().prepare('INSERT INTO imported_articles (title, content, tags, category, published, author, source) VALUES (?, ?, ?, ?, ?, ?, ?)').run(
-    article.title, article.content, JSON.stringify(article.tags), article.category, article.published || new Date().toISOString().split('T')[0], article.author, article.source
-  );
-  return { id: Number(result.lastInsertRowid), ...article, createdAt: new Date().toISOString() };
+export async function getImportedArticle(id: number): Promise<ImportedArticle | null> {
+  const { data, error } = await getClient().from('imported_articles').select('*').eq('id', id).maybeSingle();
+  if (error) throw error;
+  if (!data) return null;
+  return mapImportedArticle(data as ImportedArticleRow);
 }
 
-export function updateImportedArticle(id: number, article: { title: string; content: string; tags: string[]; category: string; published: string; author: string; source: string }): boolean {
-  const result = getDb().prepare('UPDATE imported_articles SET title=?, content=?, tags=?, category=?, published=?, author=?, source=? WHERE id=?').run(
-    article.title, article.content, JSON.stringify(article.tags), article.category, article.published, article.author, article.source, id
-  );
-  return result.changes > 0;
+export async function createImportedArticle(article: { title: string; content: string; tags: string[]; category: string; published: string; author: string; source: string }): Promise<ImportedArticle> {
+  const row = {
+    title: article.title,
+    content: article.content,
+    tags: tagsToJson(article.tags),
+    category: article.category,
+    published: article.published || new Date().toISOString().split('T')[0],
+    author: article.author,
+    source: article.source,
+  };
+  const { data, error } = await getClient().from('imported_articles').insert(row).select().single();
+  if (error) throw error;
+  const created = data as ImportedArticleRow;
+  return { id: created.id, ...article, createdAt: created.created_at };
 }
 
-export function deleteImportedArticle(id: number): boolean {
-  const result = getDb().prepare('DELETE FROM imported_articles WHERE id = ?').run(id);
-  return result.changes > 0;
+export async function updateImportedArticle(id: number, article: { title: string; content: string; tags: string[]; category: string; published: string; author: string; source: string }): Promise<boolean> {
+  const { error } = await getClient().from('imported_articles').update({
+    title: article.title,
+    content: article.content,
+    tags: tagsToJson(article.tags),
+    category: article.category,
+    published: article.published,
+    author: article.author,
+    source: article.source,
+  }).eq('id', id);
+  if (error) throw error;
+  return true;
+}
+
+export async function deleteImportedArticle(id: number): Promise<boolean> {
+  const { error } = await getClient().from('imported_articles').delete().eq('id', id);
+  if (error) throw error;
+  return true;
 }
 
 // --- Review Cards ---
@@ -270,39 +201,58 @@ export interface ReviewCard {
   repetitions: number;
 }
 
-export function getReviewCards(): ReviewCard[] {
-  const rows = getDb().prepare('SELECT * FROM review_cards').all() as ReviewCardRow[];
-  return rows.map(r => ({ id: r.id, title: r.title, description: r.description, tags: safeParseTags(r.tags), category: r.category, nextReview: r.next_review, interval: r.interval, easeFactor: r.ease_factor, repetitions: r.repetitions }));
+function mapReviewCard(r: ReviewCardRow): ReviewCard {
+  return { id: r.id, title: r.title, description: r.description, tags: safeParseTags(r.tags), category: r.category, nextReview: r.next_review, interval: r.interval, easeFactor: r.ease_factor, repetitions: r.repetitions };
 }
 
-export function upsertReviewCard(card: Omit<ReviewCard, 'id'> & { id?: number }): ReviewCard {
-  const db = getDb();
+export async function getReviewCards(): Promise<ReviewCard[]> {
+  const { data, error } = await getClient().from('review_cards').select('*');
+  if (error) throw error;
+  return (data as ReviewCardRow[]).map(mapReviewCard);
+}
+
+export async function upsertReviewCard(card: Omit<ReviewCard, 'id'> & { id?: number }): Promise<ReviewCard> {
+  const row = {
+    title: card.title,
+    description: card.description,
+    tags: tagsToJson(card.tags),
+    category: card.category,
+    next_review: card.nextReview,
+    interval: card.interval,
+    ease_factor: card.easeFactor,
+    repetitions: card.repetitions,
+  };
   if (card.id) {
-    db.prepare('UPDATE review_cards SET title=?, description=?, tags=?, category=?, next_review=?, interval=?, ease_factor=?, repetitions=? WHERE id=?').run(
-      card.title, card.description, JSON.stringify(card.tags), card.category, card.nextReview, card.interval, card.easeFactor, card.repetitions, card.id
-    );
-    return { ...card, id: card.id } as ReviewCard;
+    const { data, error } = await getClient().from('review_cards').update(row).eq('id', card.id).select().single();
+    if (error) throw error;
+    return mapReviewCard(data as ReviewCardRow);
   }
-  const result = db.prepare('INSERT INTO review_cards (title, description, tags, category, next_review, interval, ease_factor, repetitions) VALUES (?, ?, ?, ?, ?, ?, ?, ?)').run(
-    card.title, card.description, JSON.stringify(card.tags), card.category, card.nextReview, card.interval, card.easeFactor, card.repetitions
-  );
-  return { ...card, id: Number(result.lastInsertRowid) } as ReviewCard;
+  const { data, error } = await getClient().from('review_cards').insert(row).select().single();
+  if (error) throw error;
+  return mapReviewCard(data as ReviewCardRow);
 }
 
-export function batchUpsertReviewCards(cards: (Omit<ReviewCard, 'id'> & { id?: number })[]): void {
-  const db = getDb();
-  const update = db.prepare('UPDATE review_cards SET title=?, description=?, tags=?, category=?, next_review=?, interval=?, ease_factor=?, repetitions=? WHERE id=?');
-  const insert = db.prepare('INSERT INTO review_cards (title, description, tags, category, next_review, interval, ease_factor, repetitions) VALUES (?, ?, ?, ?, ?, ?, ?, ?)');
-  const transaction = db.transaction(() => {
-    for (const card of cards) {
-      if (card.id) {
-        update.run(card.title, card.description, JSON.stringify(card.tags), card.category, card.nextReview, card.interval, card.easeFactor, card.repetitions, card.id);
-      } else {
-        insert.run(card.title, card.description, JSON.stringify(card.tags), card.category, card.nextReview, card.interval, card.easeFactor, card.repetitions);
-      }
+export async function batchUpsertReviewCards(cards: (Omit<ReviewCard, 'id'> & { id?: number })[]): Promise<void> {
+  const client = getClient();
+  for (const card of cards) {
+    const row = {
+      title: card.title,
+      description: card.description,
+      tags: tagsToJson(card.tags),
+      category: card.category,
+      next_review: card.nextReview,
+      interval: card.interval,
+      ease_factor: card.easeFactor,
+      repetitions: card.repetitions,
+    };
+    if (card.id) {
+      const { error } = await client.from('review_cards').update(row).eq('id', card.id);
+      if (error) throw error;
+    } else {
+      const { error } = await client.from('review_cards').insert(row);
+      if (error) throw error;
     }
-  });
-  transaction();
+  }
 }
 
 // --- Activities ---
@@ -317,13 +267,19 @@ export interface Activity {
   createdAt: string;
 }
 
-export function addActivity(action: string, articleType: string, articleId: string, articleTitle: string, articleHref: string): void {
-  getDb().prepare('INSERT INTO activities (action, article_type, article_id, article_title, article_href) VALUES (?, ?, ?, ?, ?)').run(action, articleType, articleId, articleTitle, articleHref);
+export async function addActivity(action: string, articleType: string, articleId: string, articleTitle: string, articleHref: string): Promise<void> {
+  const { error } = await getClient().from('activities').insert({
+    action, article_type: articleType, article_id: articleId, article_title: articleTitle, article_href: articleHref,
+  });
+  if (error) throw error;
 }
 
-export function getActivities(limit = 20): Activity[] {
-  const rows = getDb().prepare('SELECT * FROM activities ORDER BY created_at DESC LIMIT ?').all(limit) as ActivityRow[];
-  return rows.map(r => ({ id: r.id, action: r.action, articleType: r.article_type, articleId: r.article_id, articleTitle: r.article_title, articleHref: r.article_href, createdAt: r.created_at }));
+export async function getActivities(limit = 20): Promise<Activity[]> {
+  const { data, error } = await getClient().from('activities').select('*').order('created_at', { ascending: false }).limit(limit);
+  if (error) throw error;
+  return (data as ActivityRow[]).map(r => ({
+    id: r.id, action: r.action, articleType: r.article_type, articleId: r.article_id, articleTitle: r.article_title, articleHref: r.article_href, createdAt: r.created_at,
+  }));
 }
 
 // --- Tag Relations ---
@@ -337,25 +293,31 @@ export interface TagRelation {
   reason: string;
 }
 
-export function getTagRelations(): TagRelation[] {
-  const rows = getDb().prepare('SELECT * FROM tag_relations').all() as TagRelationRow[];
-  return rows.map(r => ({ id: r.id, tagA: r.tag_a, tagB: r.tag_b, relationType: r.relation_type, confidence: r.confidence, reason: r.reason }));
+export async function getTagRelations(): Promise<TagRelation[]> {
+  const { data, error } = await getClient().from('tag_relations').select('*');
+  if (error) throw error;
+  return (data as TagRelationRow[]).map(r => ({
+    id: r.id, tagA: r.tag_a, tagB: r.tag_b, relationType: r.relation_type, confidence: r.confidence, reason: r.reason,
+  }));
 }
 
-export function setTagRelations(relations: { tagA: string; tagB: string; relationType: string; confidence: number; reason: string }[]): void {
-  const db = getDb();
-  db.prepare('DELETE FROM tag_relations').run();
-  const insert = db.prepare('INSERT OR IGNORE INTO tag_relations (tag_a, tag_b, relation_type, confidence, reason) VALUES (?, ?, ?, ?, ?)');
-  const t = db.transaction(() => {
-    for (const r of relations) insert.run(r.tagA, r.tagB, r.relationType, r.confidence, r.reason);
-  });
-  t();
+export async function setTagRelations(relations: { tagA: string; tagB: string; relationType: string; confidence: number; reason: string }[]): Promise<void> {
+  const client = getClient();
+  const { error: delErr } = await client.from('tag_relations').delete().neq('id', 0);
+  if (delErr) throw delErr;
+  if (relations.length === 0) return;
+  const rows = relations.map(r => ({
+    tag_a: r.tagA, tag_b: r.tagB, relation_type: r.relationType, confidence: r.confidence, reason: r.reason,
+  }));
+  const { error: insErr } = await client.from('tag_relations').upsert(rows, { onConflict: 'tag_a,tag_b,relation_type', ignoreDuplicates: true });
+  if (insErr) throw insErr;
 }
 
-export function getAllTags(): string[] {
-  const rows = getDb().prepare('SELECT DISTINCT tags FROM imported_articles').all() as TagsRow[];
+export async function getAllTags(): Promise<string[]> {
+  const { data, error } = await getClient().from('imported_articles').select('tags');
+  if (error) throw error;
   const tagSet = new Set<string>();
-  rows.forEach(r => {
+  (data as { tags: string | string[] }[]).forEach(r => {
     safeParseTags(r.tags).forEach(t => tagSet.add(t));
   });
   return [...tagSet];
@@ -363,22 +325,21 @@ export function getAllTags(): string[] {
 
 // --- Reading Progress ---
 
-export function getReadingProgress(articleType: string, articleId: string): number | null {
-  const row = getDb().prepare('SELECT progress FROM reading_progress WHERE article_type = ? AND article_id = ?').get(articleType, articleId) as ReadingProgressRow | undefined;
-  if (!row) return null;
-  return row.progress;
+export async function getReadingProgress(articleType: string, articleId: string): Promise<number | null> {
+  const { data, error } = await getClient().from('reading_progress').select('progress').eq('article_type', articleType).eq('article_id', articleId).maybeSingle();
+  if (error) throw error;
+  if (!data) return null;
+  return (data as ReadingProgressRow).progress;
 }
 
-export function setReadingProgress(articleType: string, articleId: string, progress: number): void {
-  getDb().prepare('INSERT INTO reading_progress (article_type, article_id, progress, updated_at) VALUES (?, ?, ?, datetime(\'now\')) ON CONFLICT(article_type, article_id) DO UPDATE SET progress = excluded.progress, updated_at = datetime(\'now\')').run(articleType, articleId, progress);
+export async function setReadingProgress(articleType: string, articleId: string, progress: number): Promise<void> {
+  const { error } = await getClient().from('reading_progress').upsert({
+    article_type: articleType, article_id: articleId, progress, updated_at: new Date().toISOString(),
+  }, { onConflict: 'article_type,article_id' });
+  if (error) throw error;
 }
 
-// --- Full-text Search ---
-
-interface FtsRow {
-  article_type: string; article_id: string; title: string;
-  content: string; tags: string; category: string; author: string;
-}
+// --- Full-text Search (PostgreSQL tsvector) ---
 
 export interface SearchResultItem {
   articleType: string;
@@ -390,29 +351,29 @@ export interface SearchResultItem {
   author: string;
 }
 
-export function searchArticles(query: string, limit = 50): SearchResultItem[] {
+export async function searchArticles(query: string, limit = 50): Promise<SearchResultItem[]> {
   const trimmed = query.trim();
   if (!trimmed) return [];
-  const escaped = trimmed.replace(/["']/g, ' ').replace(/[()]/g, ' ');
-  const ftsQuery = escaped.split(/\s+/).filter(Boolean).map(w => `"${w}"`).join(' ');
-  let rows: FtsRow[];
-  try {
-    rows = getDb().prepare(
-      `SELECT article_type, article_id, title, tags, category, author,
-              snippet(articles_fts, 3, '<mark>', '</mark>', '...', 24) as content
-       FROM articles_fts WHERE articles_fts MATCH ?
-       ORDER BY rank LIMIT ?`
-    ).all(ftsQuery, limit) as FtsRow[];
-  } catch {
-    return [];
+  const client = getClient();
+  const { data, error } = await client.rpc('search_articles', { search_query: trimmed, result_limit: limit });
+  if (error) {
+    const { data: fallback, error: fbErr } = await client.from('imported_articles')
+      .select('id, title, content, tags, category, author')
+      .or(`title.ilike.%${trimmed}%,content.ilike.%${trimmed}%`)
+      .limit(limit);
+    if (fbErr) return [];
+    return (fallback as ImportedArticleRow[]).map(r => ({
+      articleType: 'imported',
+      articleId: String(r.id),
+      title: r.title,
+      snippet: r.content.slice(0, 200),
+      tags: safeParseTags(r.tags),
+      category: r.category,
+      author: r.author,
+    }));
   }
-  return rows.map(r => ({
-    articleType: r.article_type,
-    articleId: r.article_id,
-    title: r.title,
-    snippet: r.content,
+  return (data as SearchResultItem[]).map(r => ({
+    ...r,
     tags: safeParseTags(r.tags),
-    category: r.category,
-    author: r.author,
   }));
 }

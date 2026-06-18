@@ -36,7 +36,7 @@ export async function getCurrentUser() {
   if (!token) return null;
   const payload = await verifyToken(token);
   if (!payload) return null;
-  const user = findUser(payload.username);
+  const user = await findUser(payload.username);
   if (!user) return null;
   return { id: user.id, username: user.username, role: user.role, createdAt: user.createdAt };
 }

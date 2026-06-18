@@ -7,7 +7,7 @@ export async function GET() {
   if (!user || user.role !== 'admin') {
     return NextResponse.json({ error: '无权限' }, { status: 403 });
   }
-  const users = getUsers().map(u => ({ id: u.id, username: u.username, role: u.role, createdAt: u.createdAt }));
+  const users = (await getUsers()).map(u => ({ id: u.id, username: u.username, role: u.role, createdAt: u.createdAt }));
   return NextResponse.json({ users });
 }
 
@@ -17,7 +17,7 @@ export async function PUT(request: Request) {
     return NextResponse.json({ error: '无权限' }, { status: 403 });
   }
   const { id, role, password } = await request.json();
-  const updated = updateUser(id, { role, password });
+  const updated = await updateUser(id, { role, password });
   if (!updated) return NextResponse.json({ error: '用户不存在' }, { status: 404 });
   return NextResponse.json({ user: { id: updated.id, username: updated.username, role: updated.role } });
 }
@@ -29,6 +29,6 @@ export async function DELETE(request: Request) {
   }
   const { id } = await request.json();
   if (id === user.id) return NextResponse.json({ error: '不能删除自己' }, { status: 400 });
-  deleteUser(id);
+  await deleteUser(id);
   return NextResponse.json({ ok: true });
 }

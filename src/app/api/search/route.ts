@@ -7,7 +7,7 @@ export async function GET(request: Request) {
   const q = searchParams.get('q') || '';
   if (!q.trim()) return NextResponse.json({ results: [] });
 
-  const dbResults = searchArticles(q, 50);
+  const dbResults = await searchArticles(q, 50);
 
   const lower = q.toLowerCase();
   const mdArticles = getAllArticles().filter(a =>

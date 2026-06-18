@@ -34,15 +34,15 @@ export async function POST(request: Request) {
   if (RESERVED.includes(usernameTrim.toLowerCase())) {
     return NextResponse.json({ error: '该用户名不可注册' }, { status: 400 });
   }
-  if (findUser(usernameTrim)) {
+  if (await findUser(usernameTrim)) {
     return NextResponse.json({ error: '用户名已被占用' }, { status: 400 });
   }
 
-  const total = countUsers();
+  const total = await countUsers();
   const role: 'admin' | 'viewer' = total === 0 ? 'admin' : 'viewer';
 
   try {
-    const user = createUser(usernameTrim, password, role);
+    const user = await createUser(usernameTrim, password, role);
     const token = await createToken(user.id, user.username, user.role);
     const res = NextResponse.json({ user: { id: user.id, username: user.username, role: user.role } });
     res.cookies.set('token', token, { httpOnly: true, maxAge: 60 * 60 * 24 * 7, path: '/' });

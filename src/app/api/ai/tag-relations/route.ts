@@ -14,7 +14,7 @@ export async function POST() {
   const user = await getCurrentUser();
   if (!user) return NextResponse.json({ error: '未登录' }, { status: 401 });
 
-  const dbTags = getDbTags();
+  const dbTags = await getDbTags();
   const knowledgeTags = getKnowledgeTags();
   const tags = [...new Set([...dbTags, ...knowledgeTags])];
   if (tags.length < 2) return NextResponse.json({ error: `至少需要2个标签，当前${tags.length}个: ${tags.join(',')}` }, { status: 400 });
@@ -27,7 +27,7 @@ export async function POST() {
     const onLog = (msg: string) => { status.logs.push(msg); };
     try {
       const results = await discoverTagRelations(tags, onLog);
-      if (results.length > 0) setTagRelations(results);
+      if (results.length > 0) await setTagRelations(results);
       status.status = 'done';
       status.done = status.total;
       status.relations = results.length;
@@ -52,5 +52,5 @@ export async function GET(request: Request) {
     if (status.status === 'done') taskStatus.delete(taskId);
     return NextResponse.json(result);
   }
-  return NextResponse.json({ relations: getTagRelations() });
+  return NextResponse.json({ relations: await getTagRelations() });
 }

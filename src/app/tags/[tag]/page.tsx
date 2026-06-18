@@ -9,7 +9,7 @@ export default async function TagPage({ params, searchParams }: { params: Promis
   const { from } = await searchParams;
   const builtinArticles = getArticlesByTag(tag);
 
-  const importedArticles = getImportedArticles().filter(a => a.tags.includes(tag));
+  const importedArticles = (await getImportedArticles()).filter(a => a.tags.includes(tag));
 
   const allArticles = [
     ...builtinArticles.map(a => ({ title: a.title, description: a.description || '', tags: a.tags, category: a.category, published: a.published, author: a.author || '', href: `/knowledge/${a.slug}` })),

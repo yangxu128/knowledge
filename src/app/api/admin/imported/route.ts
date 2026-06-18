@@ -15,7 +15,7 @@ export async function GET(request: Request) {
   const { searchParams } = new URL(request.url);
   const page = Math.max(1, Number(searchParams.get('page') || '1'));
   const pageSize = Math.min(100, Math.max(1, Number(searchParams.get('pageSize') || '50')));
-  const all = getImportedArticles();
+  const all = await getImportedArticles();
   const total = all.length;
   const start = (page - 1) * pageSize;
   const articles = all.slice(start, start + pageSize);
@@ -86,8 +86,8 @@ export async function POST(request: Request) {
     const tags = sanitizeTags(item.tags);
     const published = isValidDateString(item.published) ? item.published : today;
 
-    const article = createImportedArticle({ title, content, tags, category, published, author, source });
-    addActivity('导入了', 'imported', String(article.id), article.title, `/imported?id=${article.id}`);
+    const article = await createImportedArticle({ title, content, tags, category, published, author, source });
+    await addActivity('导入了', 'imported', String(article.id), article.title, `/imported?id=${article.id}`);
     results.push(article);
   }
 
@@ -134,7 +134,7 @@ export async function PUT(request: Request) {
     }
   }
 
-  const existing = getImportedArticle(id);
+  const existing = await getImportedArticle(id);
   if (!existing) return NextResponse.json({ error: '未找到' }, { status: 404 });
 
   const existingTags: string[] = Array.isArray(existing.tags) ? existing.tags.filter((t): t is string => typeof t === 'string') : [];
@@ -174,6 +174,6 @@ export async function DELETE(request: Request) {
   if (!Number.isFinite(id) || id <= 0) {
     return NextResponse.json({ error: '无效的 id' }, { status: 400 });
   }
-  deleteImportedArticle(id);
+  await deleteImportedArticle(id);
   return NextResponse.json({ ok: true });
 }

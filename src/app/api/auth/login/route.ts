@@ -18,7 +18,7 @@ export async function POST(request: Request) {
     return NextResponse.json({ error: '用户名或密码错误' }, { status: 401 });
   }
 
-  const user = findUser(username.trim());
+  const user = await findUser(username.trim());
   if (!user || !verifyPassword(user, password)) {
     await new Promise(r => setTimeout(r, 200 + Math.random() * 300));
     return NextResponse.json({ error: '用户名或密码错误' }, { status: 401 });

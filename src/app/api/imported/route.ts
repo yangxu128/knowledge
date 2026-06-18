@@ -23,13 +23,13 @@ export async function GET(request: Request) {
   const { searchParams } = new URL(request.url);
   const id = searchParams.get('id');
   if (id) {
-    const article = getImportedArticle(Number(id));
+    const article = await getImportedArticle(Number(id));
     if (!article) return NextResponse.json({ error: '未找到' }, { status: 404 });
     return NextResponse.json({ article });
   }
   const page = Math.max(1, Number(searchParams.get('page') || '1'));
   const pageSize = Math.min(100, Math.max(1, Number(searchParams.get('pageSize') || '50')));
-  const allArticles = getImportedArticles().map(a => {
+  const allArticles = (await getImportedArticles()).map(a => {
     const { meta } = parseFrontmatter(a.content);
     return {
       id: a.id,
