@@ -1,6 +1,8 @@
 import { getAllArticles } from '@/lib/articles';
 import HomeClient from './HomeClient';
 
+export const revalidate = 3600;
+
 export default function Home() {
   const articles = getAllArticles();
   const serverArticles = articles.map(a => ({

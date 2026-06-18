@@ -1,11 +1,10 @@
 import type { Metadata } from 'next';
 import { Noto_Sans_SC } from 'next/font/google';
-import '@fortawesome/fontawesome-free/css/all.min.css';
 import './globals.css';
 import UserMenu from '@/components/UserMenu';
 import ThemeToggle from '@/components/ThemeToggle';
 
-const notoSansSC = Noto_Sans_SC({ subsets: ['latin'], weight: ['400','500','600','700'], display: 'optional', variable: '--font-noto', preload: true });
+const notoSansSC = Noto_Sans_SC({ subsets: ['latin'], weight: ['400','600'], display: 'swap', variable: '--font-noto', preload: true, adjustFontFallback: true });
 
 export const metadata: Metadata = {
   title: '知海 — 你的第二大脑',
@@ -24,6 +23,8 @@ export default function RootLayout({ children }: { children: React.ReactNode }) 
   return (
     <html lang="zh-CN" className={notoSansSC.variable} suppressHydrationWarning>
       <head>
+        <link rel="preconnect" href="https://cdnjs.cloudflare.com" crossOrigin="anonymous" />
+        <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.5.1/css/all.min.css" media="print" onLoad="this.media='all'" />
         <script dangerouslySetInnerHTML={{ __html: `(function(){try{var s=localStorage.getItem('theme');var d=s?s==='dark':window.matchMedia('(prefers-color-scheme: dark)').matches;if(d)document.documentElement.classList.add('dark');}catch(e){}})();` }} />
       </head>
       <body className="antialiased" suppressHydrationWarning>
