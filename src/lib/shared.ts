@@ -31,7 +31,14 @@ export const iconMap: Record<string, string> = {
 
 export function timeAgo(dateStr: string): string {
   const now = new Date();
-  const d = new Date(dateStr.includes('T') || dateStr.endsWith('Z') ? dateStr : dateStr + 'Z');
+  let d: Date;
+  if (dateStr.includes('T') || dateStr.endsWith('Z')) {
+    d = new Date(dateStr);
+  } else if (/^\d{4}-\d{2}-\d{2}$/.test(dateStr)) {
+    d = new Date(dateStr + 'T00:00:00Z');
+  } else {
+    d = new Date(dateStr);
+  }
   if (isNaN(d.getTime())) return '';
   const diff = Math.floor((now.getTime() - d.getTime()) / 1000);
   if (diff < 60) return '刚刚';

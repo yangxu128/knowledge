@@ -149,7 +149,7 @@ export async function PUT(request: Request) {
     published: 'published' in obj && isValidDateString(obj.published) ? obj.published : existing.published,
   };
 
-  const ok = updateImportedArticle(id, merged);
+  const ok = await updateImportedArticle(id, merged);
   if (!ok) return NextResponse.json({ error: '未找到' }, { status: 404 });
   return NextResponse.json({ ok: true });
 }

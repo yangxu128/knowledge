@@ -17,6 +17,6 @@ export async function POST(request: Request) {
   if (!user) return NextResponse.json({ ok: true, guest: true });
   const { articleType, articleId, progress } = await request.json();
   if (!articleType || !articleId || typeof progress !== 'number') return NextResponse.json({ error: '参数不完整' }, { status: 400 });
-  setReadingProgress(articleType, articleId, progress);
+  await setReadingProgress(articleType, articleId, progress);
   return NextResponse.json({ ok: true });
 }

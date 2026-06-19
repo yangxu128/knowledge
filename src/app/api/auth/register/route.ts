@@ -45,7 +45,7 @@ export async function POST(request: Request) {
     const user = await createUser(usernameTrim, password, role);
     const token = await createToken(user.id, user.username, user.role);
     const res = NextResponse.json({ user: { id: user.id, username: user.username, role: user.role } });
-    res.cookies.set('token', token, { httpOnly: true, maxAge: 60 * 60 * 24 * 7, path: '/' });
+    res.cookies.set('token', token, { httpOnly: true, secure: true, sameSite: 'lax', maxAge: 60 * 60 * 24 * 7, path: '/' });
     return res;
   } catch (e: unknown) {
     return NextResponse.json({ error: (e as Error).message }, { status: 400 });

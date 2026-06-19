@@ -372,8 +372,14 @@ export async function searchArticles(query: string, limit = 50): Promise<SearchR
       author: r.author,
     }));
   }
-  return (data as SearchResultItem[]).map(r => ({
-    ...r,
+  const rows = data as { article_type: string; article_id: string; title: string; snippet: string; tags: string | string[]; category: string; author: string }[];
+  return rows.map(r => ({
+    articleType: r.article_type,
+    articleId: r.article_id,
+    title: r.title,
+    snippet: r.snippet,
     tags: safeParseTags(r.tags),
+    category: r.category,
+    author: r.author,
   }));
 }

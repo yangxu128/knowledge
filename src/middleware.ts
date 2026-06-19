@@ -2,7 +2,9 @@ import { NextResponse } from 'next/server';
 import type { NextRequest } from 'next/server';
 import { jwtVerify } from 'jose';
 
-const SECRET = new TextEncoder().encode(process.env.JWT_SECRET || '');
+function getSecret(): Uint8Array {
+  return new TextEncoder().encode(process.env.JWT_SECRET || '');
+}
 
 export async function middleware(request: NextRequest) {
   const { pathname } = request.nextUrl;
@@ -13,9 +15,12 @@ export async function middleware(request: NextRequest) {
       return NextResponse.redirect(new URL('/login', request.url));
     }
     try {
-      const { payload } = await jwtVerify(token, SECRET);
+      const { payload } = await jwtVerify(token, getSecret());
       if (pathname.startsWith('/admin/users') && payload.role !== 'admin') {
         return NextResponse.redirect(new URL('/admin', request.url));
+      }
+      if (pathname === '/admin' && payload.role !== 'admin' && payload.role !== 'editor') {
+        return NextResponse.redirect(new URL('/', request.url));
       }
     } catch {
       const res = NextResponse.redirect(new URL('/login', request.url));

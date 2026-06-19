@@ -14,7 +14,6 @@
     "@fortawesome/fontawesome-free": "^7.2.0",
     "@supabase/supabase-js": "^2.108.2",
     "bcryptjs": "^3.0.3",
-    "better-sqlite3": "^12.10.0",
     "gray-matter": "^4.0.3",
     "jose": "^6.2.3",
     "next": "16.2.7",
