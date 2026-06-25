@@ -6,6 +6,29 @@ import {
   sanitizeTitle, sanitizeContent, sanitizeAuthor, sanitizeCategory,
   sanitizeSource, sanitizeTags, scanDangerousContent, isValidDateString, limits,
 } from '@/lib/sanitize';
+import matter from 'gray-matter';
+
+function parseFrontmatter(content: string): { title?: string; description?: string; tags?: string[]; category?: string; published?: string; author?: string; content: string } {
+  if (!content.trimStart().startsWith('---')) return { content };
+  try {
+    const parsed = matter(content);
+    const d = parsed.data;
+    let tags: string[] | undefined;
+    if (Array.isArray(d.tags)) tags = d.tags.filter((t: unknown): t is string => typeof t === 'string');
+    else if (typeof d.tags === 'string') tags = d.tags.split(',').map((t: string) => t.trim()).filter(Boolean);
+    return {
+      title: typeof d.title === 'string' ? d.title : undefined,
+      description: typeof d.description === 'string' ? d.description : undefined,
+      tags,
+      category: typeof d.category === 'string' ? d.category : undefined,
+      published: typeof d.published === 'string' ? d.published : undefined,
+      author: typeof d.author === 'string' ? d.author : undefined,
+      content: parsed.content,
+    };
+  } catch {
+    return { content };
+  }
+}
 
 export async function GET(request: Request) {
   const user = await getCurrentUser();
@@ -78,13 +101,16 @@ export async function POST(request: Request) {
   const today = new Date().toISOString().split('T')[0];
   const results = [];
   for (const item of items) {
-    const title = sanitizeTitle(item.title) || '未命名';
-    const content = sanitizeContent(item.content);
-    const author = sanitizeAuthor(item.author) || user.username;
-    const category = sanitizeCategory(item.category);
+    const rawContent = typeof item.content === 'string' ? item.content : '';
+    const fm = parseFrontmatter(rawContent);
+    const title = sanitizeTitle(item.title || fm.title) || '未命名';
+    const content = sanitizeContent(fm.content);
+    const author = sanitizeAuthor(item.author || fm.author) || user.username;
+    const category = sanitizeCategory(item.category || fm.category);
     const source = sanitizeSource(item.source);
-    const tags = sanitizeTags(item.tags);
-    const published = isValidDateString(item.published) ? item.published : today;
+    const tags = sanitizeTags(item.tags || fm.tags);
+    const publishedRaw = typeof item.published === 'string' ? item.published : (fm.published || today);
+    const published = isValidDateString(publishedRaw) ? publishedRaw : today;
 
     const article = await createImportedArticle({ title, content, tags, category, published, author, source });
     await addActivity('导入了', 'imported', String(article.id), article.title, `/knowledge/${article.id}`);
