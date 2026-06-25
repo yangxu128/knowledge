@@ -1,6 +1,6 @@
 'use client';
 
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useCallback } from 'react';
 import { useApi } from '@/lib/useApi';
 
 interface SearchResult {
@@ -11,6 +11,7 @@ interface SearchResult {
   tags: string[];
   category: string;
   author: string;
+  rank: number;
 }
 
 function escapeReg(s: string) { return s.replace(/[.*+?^${}()|[\]\\]/g, '\\$&'); }
@@ -18,30 +19,43 @@ function escapeReg(s: string) { return s.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
 export default function SearchPage() {
   const [query, setQuery] = useState('');
   const [debounced, setDebounced] = useState('');
-  const { data, isLoading } = useApi<{ results: SearchResult[]; total: number }>(
-    debounced ? `/api/search?q=${encodeURIComponent(debounced)}` : null
-  );
+  const [page, setPage] = useState(1);
+  const [allResults, setAllResults] = useState<SearchResult[]>([]);
 
-  const highlight = (text: string): string => {
-    if (!debounced || !text) return text;
-    const pattern = debounced.split(/\s+/).filter(Boolean).map(escapeReg).join('|');
-    if (!pattern) return text;
-    const re = new RegExp(`(${pattern})`, 'gi');
-    return text.replace(re, '<mark class="bg-accent-light text-accent px-0.5 rounded">$1</mark>');
-  };
+  const { data, isLoading } = useApi<{ results: SearchResult[]; total: number; page: number; pageSize: number; hasMore: boolean }>(
+    debounced ? `/api/search?q=${encodeURIComponent(debounced)}&page=${page}&pageSize=10` : null
+  );
 
   useEffect(() => {
     const t = setTimeout(() => setDebounced(query), 300);
     return () => clearTimeout(t);
   }, [query]);
 
-  const results = data?.results || [];
+  useEffect(() => { setPage(1); setAllResults([]); }, [debounced]);
+
+  useEffect(() => {
+    if (data?.results) {
+      setAllResults(prev => page === 1 ? data.results : [...prev, ...data.results]);
+    }
+  }, [data]);
+
+  const highlight = useCallback((text: string): string => {
+    if (!debounced || !text) return text;
+    const pattern = debounced.split(/\s+/).filter(Boolean).map(escapeReg).join('|');
+    if (!pattern) return text;
+    const re = new RegExp(`(${pattern})`, 'gi');
+    return text.replace(re, '<mark class="bg-accent-light text-accent px-0.5 rounded">$1</mark>');
+  }, [debounced]);
+
+  const results = allResults;
+  const total = data?.total ?? 0;
+  const hasMore = data?.hasMore ?? false;
 
   return (
     <div className="page-enter max-w-4xl mx-auto px-6 py-10">
       <div className="mb-8">
         <h1 className="text-3xl font-bold text-ink mb-2">搜索知识</h1>
-        <p className="text-slate-500">基于 FTS5 全文索引，毫秒级响应</p>
+        <p className="text-slate-500">基于 pg_trgm + ts_rank 相关性排序，毫秒级响应</p>
       </div>
 
       <div className="relative mb-8">
@@ -57,7 +71,7 @@ export default function SearchPage() {
         )}
       </div>
 
-      {isLoading ? (
+      {isLoading && page === 1 ? (
         <div className="text-center py-20 text-slate-400"><i className="fas fa-spinner fa-spin text-2xl"></i></div>
       ) : debounced && results.length === 0 ? (
         <div className="text-center py-20 text-slate-400">
@@ -67,10 +81,11 @@ export default function SearchPage() {
         </div>
       ) : results.length > 0 ? (
         <div>
-          <p className="text-sm text-slate-400 mb-4">找到 {results.length} 个结果</p>
+          <p className="text-sm text-slate-400 mb-4">找到 {total} 个结果</p>
           <div className="space-y-3">
             {results.map((r, i) => {
               const href = r.articleType === 'imported' ? `/imported?id=${r.articleId}` : `/knowledge/${r.articleId}`;
+              const snippetHtml = r.snippet.includes('<mark>') ? r.snippet : highlight(r.snippet);
               return (
                 <a key={`${r.articleType}:${r.articleId}:${i}`} href={href}
                   className="block bg-white rounded-xl border border-warm p-5 card-hover">
@@ -82,12 +97,24 @@ export default function SearchPage() {
                     {r.articleType === 'imported' && <span className="text-xs px-2 py-0.5 rounded-full bg-warm text-slate-500">已导入</span>}
                   </div>
                   <h3 className="font-semibold text-ink mb-1" dangerouslySetInnerHTML={{ __html: highlight(r.title) }} />
-                  <p className="text-sm text-slate-500" dangerouslySetInnerHTML={{ __html: r.snippet }} />
+                  <p className="text-sm text-slate-500" dangerouslySetInnerHTML={{ __html: snippetHtml }} />
                   <div className="text-xs text-slate-400 mt-2">{r.author ? `${r.author} · ` : ''}{r.articleType === 'imported' ? '导入知识' : '知识库'}</div>
                 </a>
               );
             })}
           </div>
+          {hasMore && (
+            <div className="text-center mt-6">
+              <button
+                onClick={() => setPage(p => p + 1)}
+                disabled={isLoading}
+                className="px-6 py-2.5 bg-warm text-ink rounded-xl text-sm font-medium hover:bg-warm/80 disabled:opacity-50"
+              >
+                {isLoading ? <i className="fas fa-spinner fa-spin mr-1"></i> : <i className="fas fa-chevron-down mr-1"></i>}
+                加载更多
+              </button>
+            </div>
+          )}
         </div>
       ) : (
         <div className="text-center py-20 text-slate-400">

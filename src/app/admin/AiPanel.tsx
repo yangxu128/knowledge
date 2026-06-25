@@ -7,6 +7,8 @@ export default function AiPanel() {
   const [tagRelTask, setTagRelTask] = useState<{ taskId: string; total: number } | null>(null);
   const [tagRelProgress, setTagRelProgress] = useState<{ status: string; done: number; total: number; relations: number; errors: string[]; logs: string[] } | null>(null);
   const [tagRelations, setTagRelations] = useState<any[]>([]);
+  const [kwLoading, setKwLoading] = useState(false);
+  const [kwResult, setKwResult] = useState<{ processed: number; results: { id: number; title: string; count: number; error?: string }[] } | null>(null);
   const pollRef = useRef<NodeJS.Timeout | null>(null);
   const logRef = useRef<HTMLDivElement>(null);
 
@@ -43,6 +45,20 @@ export default function AiPanel() {
     setTagRelProgress({ status: 'running', done: 0, total: data.total, relations: 0, errors: [], logs: ['启动分析...'] });
   };
 
+  const handleGenerateKeywords = async () => {
+    setKwLoading(true);
+    setKwResult(null);
+    try {
+      const res = await fetch('/api/admin/generate-keywords', { method: 'POST' });
+      const data = await res.json();
+      if (data.error) { setKwResult({ processed: 0, results: [{ id: 0, title: '', count: 0, error: data.error }] }); }
+      else { setKwResult(data); }
+    } catch (e: any) {
+      setKwResult({ processed: 0, results: [{ id: 0, title: '', count: 0, error: e.message }] });
+    }
+    setKwLoading(false);
+  };
+
   return (
     <div className="space-y-6">
       <div className="bg-white rounded-2xl border border-warm p-6">
@@ -66,6 +82,28 @@ export default function AiPanel() {
           className="px-5 py-2 rounded-xl bg-purple-600 text-white text-sm font-medium hover:bg-purple-700 disabled:opacity-50">
           {tagRelTask ? '分析中...' : '发现标签关联'}
         </button>
+      </div>
+
+      <div className="bg-white rounded-2xl border border-warm p-6">
+        <h3 className="font-semibold text-ink mb-2">文章语义关联</h3>
+        <p className="text-sm text-slate-500 mb-4">用大模型提取每篇文章的关键词向量，基于余弦相似度自动建立文章间语义关联，用于知识图谱中文章之间的连线</p>
+        <button onClick={handleGenerateKeywords} disabled={kwLoading || !config.configured}
+          className="px-5 py-2 rounded-xl bg-sage text-white text-sm font-medium hover:bg-sage/80 disabled:opacity-50">
+          {kwLoading ? '提取中...' : '生成文章关键词'}
+        </button>
+        {kwResult && (
+          <div className="mt-4 text-sm">
+            <div className="text-slate-600 mb-2">处理 {kwResult.processed} 篇文章</div>
+            <div className="max-h-60 overflow-y-auto space-y-1">
+              {kwResult.results.map((r, i) => (
+                <div key={i} className="flex items-center gap-2 text-xs px-2 py-1 rounded bg-paper">
+                  <span className="text-ink truncate flex-1">{r.title || '(无标题)'}</span>
+                  {r.error ? <span className="text-red-500">失败: {r.error}</span> : <span className="text-sage">{r.count} 个关键词</span>}
+                </div>
+              ))}
+            </div>
+          </div>
+        )}
       </div>
 
       {tagRelProgress && (

@@ -23,9 +23,18 @@ create table if not exists imported_articles (
   created_at timestamptz default now()
 );
 
--- Full-text search index (PostgreSQL tsvector)
+-- pg_trgm 扩展：支持中文模糊匹配（trigram）
+create extension if not exists pg_trgm;
+
+-- Full-text search index (PostgreSQL tsvector) — 标题 + 内容 + 分类
 create index if not exists imported_articles_fts_idx
-  on imported_articles using gin (to_tsvector('simple', coalesce(title, '') || ' ' || coalesce(content, '')));
+  on imported_articles using gin (to_tsvector('simple', coalesce(title, '') || ' ' || coalesce(content, '') || ' ' || coalesce(category, '')));
+
+-- trigram GIN 索引：加速 ILIKE 模糊匹配（中文友好）
+create index if not exists imported_articles_title_trgm_idx
+  on imported_articles using gin (title gin_trgm_ops);
+create index if not exists imported_articles_content_trgm_idx
+  on imported_articles using gin (content gin_trgm_ops);
 
 -- Review cards (SuperMemo-2)
 create table if not exists review_cards (
@@ -37,8 +46,21 @@ create table if not exists review_cards (
   next_review date not null,
   interval integer default 1,
   ease_factor real default 2.5,
-  repetitions integer default 0
+  repetitions integer default 0,
+  article_id bigint,
+  source text default 'manual'
 );
+
+-- 复习历史记录
+create table if not exists review_history (
+  id bigserial primary key,
+  card_id bigint not null,
+  quality integer not null,
+  reviewed_at timestamptz default now()
+);
+
+create index if not exists review_history_card_idx on review_history(card_id);
+create index if not exists review_history_time_idx on review_history(reviewed_at desc);
 
 -- Activities
 create table if not exists activities (
@@ -62,6 +84,18 @@ create table if not exists tag_relations (
   unique (tag_a, tag_b, relation_type)
 );
 
+-- 文章关键词（LLM 提取，用于语义关联计算）
+create table if not exists article_keywords (
+  id bigserial primary key,
+  article_id bigint not null,
+  keyword text not null,
+  weight real default 1.0,
+  unique (article_id, keyword)
+);
+
+create index if not exists article_keywords_article_idx on article_keywords(article_id);
+create index if not exists article_keywords_keyword_idx on article_keywords(keyword);
+
 -- Reading progress
 create table if not exists reading_progress (
   id bigserial primary key,
@@ -73,7 +107,12 @@ create table if not exists reading_progress (
 );
 
 -- Full-text search function (used by db.ts searchArticles)
-create or replace function search_articles(search_query text, result_limit int default 50)
+-- 改进：ts_rank 相关性排序 + 标签/分类纳入 FTS + ts_headline 高亮 + 分页
+create or replace function search_articles(
+  search_query text,
+  result_limit int default 50,
+  result_offset int default 0
+)
 returns table (
   article_type text,
   article_id text,
@@ -81,7 +120,8 @@ returns table (
   snippet text,
   tags jsonb,
   category text,
-  author text
+  author text,
+  rank real
 ) as $$
 begin
   return query
@@ -89,15 +129,26 @@ begin
     'imported'::text as article_type,
     i.id::text as article_id,
     i.title,
-    left(i.content, 200) as snippet,
+    ts_headline('simple', i.content, plainto_tsquery('simple', search_query),
+      'MaxWords=35, MinWords=15, ShortWord=3, MaxFragments=2, FragmentDelimiter=" ... ", HighlightStart="<mark>", HighlightEnd="</mark>"') as snippet,
     i.tags,
     i.category,
-    i.author
+    i.author,
+    -- 综合相关性：FTS rank (权重 10) + 标题命中 (权重 5) + trigram 相似度 (权重 3)
+    (
+      coalesce(ts_rank(to_tsvector('simple', coalesce(i.title, '') || ' ' || coalesce(i.content, '') || ' ' || coalesce(i.category, '')),
+        plainto_tsquery('simple', search_query)), 0) * 10
+      + case when i.title ilike '%' || search_query || '%' then 5 else 0 end
+      + coalesce(similarity(i.title, search_query), 0) * 3
+    )::real as rank
   from imported_articles i
-  where to_tsvector('simple', coalesce(i.title, '') || ' ' || coalesce(i.content, '')) @@ plainto_tsquery('simple', search_query)
+  where to_tsvector('simple', coalesce(i.title, '') || ' ' || coalesce(i.content, '') || ' ' || coalesce(i.category, ''))
+      @@ plainto_tsquery('simple', search_query)
      or i.title ilike '%' || search_query || '%'
      or i.content ilike '%' || search_query || '%'
-  limit result_limit;
+     or i.title % search_query
+  order by rank desc
+  limit result_limit offset result_offset;
 end;
 $$ language plpgsql stable;
 
@@ -106,6 +157,8 @@ $$ language plpgsql stable;
 alter table users disable row level security;
 alter table imported_articles disable row level security;
 alter table review_cards disable row level security;
+alter table review_history disable row level security;
 alter table activities disable row level security;
 alter table tag_relations disable row level security;
+alter table article_keywords disable row level security;
 alter table reading_progress disable row level security;

@@ -36,6 +36,7 @@ interface GraphEdge {
 
 interface TagRelationData {
   tagRelations: { tagA: string; tagB: string; relationType: string; confidence: number; reason: string }[];
+  articleRelations: { articleAId: number; articleBId: number; articleATitle: string; articleBTitle: string; similarity: number; sharedKeywords: string[] }[];
 }
 
 const PALETTE: Record<string, { fill: string; glow: string; text: string }> = {
@@ -72,14 +73,14 @@ export default function GraphClient({ articles: serverArticles }: { articles: Ar
   const [tip, setTip] = useState<{ show: boolean; x: number; y: number; text: string; sub: string; cat: string }>({ show: false, x: 0, y: 0, text: '', sub: '', cat: '' });
 
   const [importedArticles, setImportedArticles] = useState<Article[]>([]);
-  const [tagRelData, setTagRelData] = useState<TagRelationData>({ tagRelations: [] });
+  const [tagRelData, setTagRelData] = useState<TagRelationData>({ tagRelations: [], articleRelations: [] });
 
   const fetchData = useCallback(() => {
     fetch('/api/imported').then(r => r.json()).then(d => {
       if (d.articles) setImportedArticles(d.articles.map((a: any) => ({ id: a.id, title: a.title, tags: a.tags || ['导入'], category: a.category || '导入知识' })));
     }).catch(() => {});
     fetch('/api/graph').then(r => r.json()).then(d => {
-      setTagRelData({ tagRelations: d.tagRelations || [] });
+      setTagRelData({ tagRelations: d.tagRelations || [], articleRelations: d.articleRelations || [] });
     }).catch(() => {});
   }, []);
 
@@ -151,6 +152,7 @@ export default function GraphClient({ articles: serverArticles }: { articles: Ar
     const MAX_TAGS_PER_ARTICLE = 3;
     const articleNodes: GraphNode[] = [];
     const articleToTags = new Map<number, string[]>(); // articleNodeIndex -> limitedTags
+    const articleIdToNodeIdx = new Map<number, number>(); // article.id -> node index in nodes[]
 
     const validArticles = articles.map(a => {
       const filteredTags = a.tags.filter(t => !genericTags.has(t) && tagIdxMap.has(t));
@@ -172,6 +174,7 @@ export default function GraphClient({ articles: serverArticles }: { articles: Ar
       existing.push(nodeIdx);
       tagArticleMap.set(primaryTag, existing);
       articleToTags.set(articleNodes.length, limitedTags);
+      if (a.id) articleIdToNodeIdx.set(a.id, nodeIdx);
 
       articleNodes.push({
         id: a.title,
@@ -229,6 +232,15 @@ export default function GraphClient({ articles: serverArticles }: { articles: Ar
         }
       }
     });
+
+    // 文章语义关联边（基于 LLM 关键词余弦相似度）
+    for (const ar of tagRelData.articleRelations) {
+      const ai = articleIdToNodeIdx.get(ar.articleAId);
+      const bi = articleIdToNodeIdx.get(ar.articleBId);
+      if (ai !== undefined && bi !== undefined && ai !== bi) {
+        edges.push({ si: Math.min(ai, bi), ti: Math.max(ai, bi), weight: ar.similarity, aiRelation: 'similar', confidence: ar.similarity });
+      }
+    }
 
     return { nodes, edges, tagArticleMap, tagIdxMap };
   }, [serverArticles, importedArticles, tagRelData]);
@@ -418,14 +430,16 @@ export default function GraphClient({ articles: serverArticles }: { articles: Ar
         const dim = hoverIdx >= 0 && !isConn;
         const isArticleTag = nodes[e.si].type !== nodes[e.ti].type;
         const isTagTag = nodes[e.si].type === 'tag' && nodes[e.ti].type === 'tag';
+        const isArticleArticle = nodes[e.si].type === 'article' && nodes[e.ti].type === 'article';
 
-        ctxEl.globalAlpha = dim ? 0.04 : isConn ? 0.6 : isArticleTag ? 0.2 : isTagTag ? 0.15 : 0.1;
+        ctxEl.globalAlpha = dim ? 0.04 : isConn ? 0.6 : isArticleArticle ? 0.25 : isArticleTag ? 0.2 : isTagTag ? 0.15 : 0.1;
         ctxEl.strokeStyle = isConn
           ? (PALETTE[nodes[hoverIdx]?.cat]?.fill || '#e85d4e')
-          : isTagTag ? '#7c6cdb' : '#c8c0b4';
-        ctxEl.lineWidth = isConn ? 1.2 : isArticleTag ? 0.8 : 0.7;
+          : isArticleArticle ? '#5b8a72' : isTagTag ? '#7c6cdb' : '#c8c0b4';
+        ctxEl.lineWidth = isConn ? 1.2 : isArticleArticle ? 1 : isArticleTag ? 0.8 : 0.7;
 
         if (isTagTag) ctxEl.setLineDash([4, 4]);
+        else if (isArticleArticle) ctxEl.setLineDash([2, 3]);
         else ctxEl.setLineDash([]);
 
         ctxEl.beginPath();
@@ -828,6 +842,10 @@ export default function GraphClient({ articles: serverArticles }: { articles: Ar
               <div className="flex items-center gap-2"><span className="w-4 border-t" style={{ borderColor: '#c8c0b4' }}></span><span className="text-slate-600">关联</span></div>
               <div className="flex items-center gap-2"><span className="w-4 border-t-2 border-dashed" style={{ borderColor: '#7c6cdb' }}></span><span className="text-slate-600">父子</span></div>
               <div className="flex items-center gap-2"><span className="w-4 border-t-2 border-dotted" style={{ borderColor: '#5b8a72' }}></span><span className="text-slate-600">同义</span></div>
+            </div>
+            <div className="border-t border-warm my-2 pt-2">
+              <div className="text-slate-400 font-medium mb-1">文章语义关联</div>
+              <div className="flex items-center gap-2"><span className="w-4 border-t-2 border-dashed" style={{ borderColor: '#5b8a72' }}></span><span className="text-slate-600">语义相似</span></div>
             </div>
           </div>
         </div>

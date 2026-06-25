@@ -12,15 +12,9 @@ interface ReviewCard {
   interval: number;
   easeFactor: number;
   repetitions: number;
+  articleId: number | null;
+  source: string;
 }
-
-const defaultCards: Omit<ReviewCard, 'id'>[] = [
-  { title: 'EdgeOne Pages 部署指南', description: '介绍如何使用 EdgeOne Pages 快速部署前端应用', tags: ['EdgeOne', '部署', '前端'], category: '技术文档', nextReview: '__TODAY__', interval: 1, easeFactor: 2.5, repetitions: 0 },
-  { title: '边缘函数入门', description: '了解 EdgeOne 边缘函数的基本概念和使用方法', tags: ['EdgeOne', '边缘计算', 'Serverless'], category: '技术文档', nextReview: '__TODAY__', interval: 1, easeFactor: 2.5, repetitions: 0 },
-  { title: 'KV 存储使用指南', description: 'EdgeOne KV 存储服务的使用方法和最佳实践', tags: ['EdgeOne', '存储', '数据库'], category: '技术文档', nextReview: '__TODAY__', interval: 1, easeFactor: 2.5, repetitions: 0 },
-  { title: 'Web 性能优化实践', description: '前端性能优化的实用技巧和最佳实践', tags: ['性能', '前端', 'CDN'], category: '最佳实践', nextReview: '__TODAY__', interval: 1, easeFactor: 2.5, repetitions: 0 },
-  { title: '个人知识管理方法论', description: '构建个人知识体系的系统方法', tags: ['知识管理', '效率', '方法论'], category: '方法论', nextReview: '__TODAY__', interval: 1, easeFactor: 2.5, repetitions: 0 },
-];
 
 function superMemo2(quality: number, card: ReviewCard): Partial<ReviewCard> {
   let { easeFactor, interval, repetitions } = card;
@@ -53,20 +47,8 @@ export default function ReviewPage() {
   useEffect(() => {
     setHydrated(true);
     fetch('/api/review').then(r => r.json()).then(d => {
-      const initialCards: Omit<ReviewCard, 'id'>[] = defaultCards.map(c => ({
-        ...c, nextReview: c.nextReview === '__TODAY__' ? new Date().toISOString().split('T')[0] : c.nextReview,
-      }));
-      if (d.cards && d.cards.length > 0) {
-        setCards(d.cards);
-        setLoading(false);
-      } else {
-        fetch('/api/review', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ cards: initialCards }) }).then(() => {
-          fetch('/api/review').then(r2 => r2.json()).then(d2 => {
-            setCards(d2.cards || []);
-            setLoading(false);
-          });
-        });
-      }
+      setCards(d.cards || []);
+      setLoading(false);
     }).catch(() => { setLoading(false); });
   }, []);
 
@@ -81,7 +63,11 @@ export default function ReviewPage() {
     setCards(newCards);
     setFlipped(false);
     setReviewedIds(prev => new Set(prev).add(currentCard.id));
-    fetch('/api/review', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ cards: newCards }) }).catch(() => {});
+    fetch('/api/review', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ cards: newCards, reviewedCardId: currentCard.id, quality }),
+    }).catch(() => {});
   }, [currentCard, cards]);
 
   const ratingLabels = [
@@ -146,9 +132,12 @@ export default function ReviewPage() {
                   {currentCard?.tags.slice(0, 2).map((tag: string) => (
                     <span key={tag} className="text-xs font-medium px-2 py-0.5 rounded-full bg-sage-light text-sage">{tag}</span>
                   ))}
+                  {currentCard?.source === 'auto' && (
+                    <span className="text-xs px-1.5 py-0.5 rounded-full bg-accent-light text-accent">自动生成</span>
+                  )}
                 </div>
                 <h2 className="text-2xl font-bold text-ink text-center mb-4">{currentCard?.title}</h2>
-                <p className="text-slate-500 text-center mb-6">{currentCard?.description}</p>
+                <p className="text-slate-500 text-center mb-6 line-clamp-3">{currentCard?.description}</p>
                 <div className="text-sm text-slate-400">
                   <i className="fas fa-hand-pointer mr-1"></i>点击翻转查看详情
                 </div>
@@ -158,6 +147,11 @@ export default function ReviewPage() {
                 <h3 className="text-lg font-semibold text-ink mb-4">{currentCard?.title}</h3>
                 <p className="text-slate-500 text-center mb-2">分类：{currentCard?.category}</p>
                 <p className="text-slate-400 text-sm">间隔：{currentCard?.interval} 天 | 重复：{currentCard?.repetitions} 次</p>
+                {currentCard?.articleId && (
+                  <a href={`/imported?id=${currentCard.articleId}`} className="text-sm text-accent mt-3 hover:underline">
+                    <i className="fas fa-external-link-alt mr-1"></i>查看原文
+                  </a>
+                )}
                 <div className="mt-6 text-sm text-slate-400">你对这个知识点的掌握程度？</div>
               </div>
             </div>

@@ -43,6 +43,7 @@ interface ImportedArticleRow {
 interface ReviewCardRow {
   id: number; title: string; description: string; tags: string | string[]; category: string;
   next_review: string; interval: number; ease_factor: number; repetitions: number;
+  article_id: number | null; source: string;
 }
 interface ActivityRow {
   id: number; action: string; article_type: string; article_id: string;
@@ -199,14 +200,16 @@ export interface ReviewCard {
   interval: number;
   easeFactor: number;
   repetitions: number;
+  articleId: number | null;
+  source: string;
 }
 
 function mapReviewCard(r: ReviewCardRow): ReviewCard {
-  return { id: r.id, title: r.title, description: r.description, tags: safeParseTags(r.tags), category: r.category, nextReview: r.next_review, interval: r.interval, easeFactor: r.ease_factor, repetitions: r.repetitions };
+  return { id: r.id, title: r.title, description: r.description, tags: safeParseTags(r.tags), category: r.category, nextReview: r.next_review, interval: r.interval, easeFactor: r.ease_factor, repetitions: r.repetitions, articleId: r.article_id, source: r.source || 'manual' };
 }
 
 export async function getReviewCards(): Promise<ReviewCard[]> {
-  const { data, error } = await getClient().from('review_cards').select('*');
+  const { data, error } = await getClient().from('review_cards').select('*').order('next_review', { ascending: true });
   if (error) throw error;
   return (data as ReviewCardRow[]).map(mapReviewCard);
 }
@@ -221,6 +224,8 @@ export async function upsertReviewCard(card: Omit<ReviewCard, 'id'> & { id?: num
     interval: card.interval,
     ease_factor: card.easeFactor,
     repetitions: card.repetitions,
+    article_id: card.articleId,
+    source: card.source,
   };
   if (card.id) {
     const { data, error } = await getClient().from('review_cards').update(row).eq('id', card.id).select().single();
@@ -244,6 +249,8 @@ export async function batchUpsertReviewCards(cards: (Omit<ReviewCard, 'id'> & { 
       interval: card.interval,
       ease_factor: card.easeFactor,
       repetitions: card.repetitions,
+      article_id: card.articleId,
+      source: card.source,
     };
     if (card.id) {
       const { error } = await client.from('review_cards').update(row).eq('id', card.id);
@@ -253,6 +260,64 @@ export async function batchUpsertReviewCards(cards: (Omit<ReviewCard, 'id'> & { 
       if (error) throw error;
     }
   }
+}
+
+// 从 imported_articles 自动生成复习卡片（取尚未有卡片的文章）
+export async function autoGenerateReviewCards(): Promise<number> {
+  const client = getClient();
+
+  const { data: existing } = await client.from('review_cards')
+    .select('article_id')
+    .not('article_id', 'is', null);
+  const existingArticleIds = new Set((existing as { article_id: number }[] | null)?.map(r => r.article_id) || []);
+
+  const { data: articles } = await client.from('imported_articles')
+    .select('id, title, content, tags, category')
+    .order('created_at', { ascending: false })
+    .limit(100);
+
+  const newArticles = (articles as ImportedArticleRow[] | null)?.filter(a => !existingArticleIds.has(a.id)) || [];
+  if (newArticles.length === 0) return 0;
+
+  const today = new Date().toISOString().split('T')[0];
+  const newCards = newArticles.map(a => ({
+    title: a.title,
+    description: a.content.slice(0, 150),
+    tags: tagsToJson(safeParseTags(a.tags)),
+    category: a.category,
+    next_review: today,
+    interval: 1,
+    ease_factor: 2.5,
+    repetitions: 0,
+    article_id: a.id,
+    source: 'auto',
+  }));
+
+  const { error } = await client.from('review_cards').insert(newCards);
+  if (error) throw error;
+  return newCards.length;
+}
+
+// --- Review History ---
+
+export interface ReviewHistoryEntry {
+  id: number;
+  cardId: number;
+  quality: number;
+  reviewedAt: string;
+}
+
+export async function addReviewHistory(cardId: number, quality: number): Promise<void> {
+  const { error } = await getClient().from('review_history').insert({ card_id: cardId, quality });
+  if (error) throw error;
+}
+
+export async function getReviewHistory(limit = 50): Promise<ReviewHistoryEntry[]> {
+  const { data, error } = await getClient().from('review_history').select('*').order('reviewed_at', { ascending: false }).limit(limit);
+  if (error) throw error;
+  return (data as { id: number; card_id: number; quality: number; reviewed_at: string }[] | null)?.map(r => ({
+    id: r.id, cardId: r.card_id, quality: r.quality, reviewedAt: r.reviewed_at,
+  })) || [];
 }
 
 // --- Activities ---
@@ -323,6 +388,95 @@ export async function getAllTags(): Promise<string[]> {
   return [...tagSet];
 }
 
+// --- Article Keywords (语义关联) ---
+
+export interface ArticleKeywordRow {
+  articleId: number;
+  keyword: string;
+  weight: number;
+}
+
+export async function storeArticleKeywords(articleId: number, keywords: { keyword: string; weight: number }[]): Promise<void> {
+  const client = getClient();
+  await client.from('article_keywords').delete().eq('article_id', articleId);
+  if (keywords.length === 0) return;
+  const rows = keywords.map(k => ({ article_id: articleId, keyword: k.keyword, weight: k.weight }));
+  const { error } = await client.from('article_keywords').upsert(rows, { onConflict: 'article_id,keyword', ignoreDuplicates: true });
+  if (error) throw error;
+}
+
+export async function getArticleKeywords(): Promise<ArticleKeywordRow[]> {
+  const { data, error } = await getClient().from('article_keywords').select('article_id, keyword, weight');
+  if (error) throw error;
+  return ((data as { article_id: number; keyword: string; weight: number }[] | null) || []).map(r => ({
+    articleId: r.article_id, keyword: r.keyword, weight: r.weight,
+  }));
+}
+
+export interface ArticleRelation {
+  articleAId: number;
+  articleBId: number;
+  articleATitle: string;
+  articleBTitle: string;
+  similarity: number;
+  sharedKeywords: string[];
+}
+
+export async function getArticleRelations(threshold = 0.3): Promise<ArticleRelation[]> {
+  const client = getClient();
+
+  const { data: keywords } = await client.from('article_keywords').select('article_id, keyword, weight');
+  const kwRows = (keywords as { article_id: number; keyword: string; weight: number }[] | null) || [];
+
+  const { data: articles } = await client.from('imported_articles').select('id, title');
+  const articleMap = new Map<number, string>(
+    ((articles as { id: number; title: string }[] | null) || []).map(a => [a.id, a.title])
+  );
+
+  const articleKeywords = new Map<number, Map<string, number>>();
+  for (const r of kwRows) {
+    if (!articleKeywords.has(r.article_id)) articleKeywords.set(r.article_id, new Map());
+    articleKeywords.get(r.article_id)!.set(r.keyword, r.weight);
+  }
+
+  const articleIds = [...articleKeywords.keys()];
+  const relations: ArticleRelation[] = [];
+
+  for (let i = 0; i < articleIds.length; i++) {
+    for (let j = i + 1; j < articleIds.length; j++) {
+      const aId = articleIds[i];
+      const bId = articleIds[j];
+      const aKw = articleKeywords.get(aId)!;
+      const bKw = articleKeywords.get(bId)!;
+
+      const shared = [...aKw.keys()].filter(k => bKw.has(k));
+      if (shared.length === 0) continue;
+
+      let dotProduct = 0;
+      for (const k of shared) dotProduct += (aKw.get(k) || 0) * (bKw.get(k) || 0);
+
+      let normA = 0, normB = 0;
+      for (const v of aKw.values()) normA += v * v;
+      for (const v of bKw.values()) normB += v * v;
+
+      const similarity = normA > 0 && normB > 0 ? dotProduct / (Math.sqrt(normA) * Math.sqrt(normB)) : 0;
+
+      if (similarity >= threshold) {
+        relations.push({
+          articleAId: aId,
+          articleBId: bId,
+          articleATitle: articleMap.get(aId) || '',
+          articleBTitle: articleMap.get(bId) || '',
+          similarity,
+          sharedKeywords: shared,
+        });
+      }
+    }
+  }
+
+  return relations.sort((a, b) => b.similarity - a.similarity);
+}
+
 // --- Reading Progress ---
 
 export async function getReadingProgress(articleType: string, articleId: string): Promise<number | null> {
@@ -349,18 +503,24 @@ export interface SearchResultItem {
   tags: string[];
   category: string;
   author: string;
+  rank: number;
 }
 
-export async function searchArticles(query: string, limit = 50): Promise<SearchResultItem[]> {
+export async function searchArticles(query: string, limit = 50, offset = 0): Promise<SearchResultItem[]> {
   const trimmed = query.trim();
   if (!trimmed) return [];
   const client = getClient();
-  const { data, error } = await client.rpc('search_articles', { search_query: trimmed, result_limit: limit });
+  const { data, error } = await client.rpc('search_articles', {
+    search_query: trimmed,
+    result_limit: limit,
+    result_offset: offset,
+  });
   if (error) {
     const { data: fallback, error: fbErr } = await client.from('imported_articles')
       .select('id, title, content, tags, category, author')
       .or(`title.ilike.%${trimmed}%,content.ilike.%${trimmed}%`)
-      .limit(limit);
+      .order('created_at', { ascending: false })
+      .range(offset, offset + limit - 1);
     if (fbErr) return [];
     return (fallback as ImportedArticleRow[]).map(r => ({
       articleType: 'imported',
@@ -370,9 +530,10 @@ export async function searchArticles(query: string, limit = 50): Promise<SearchR
       tags: safeParseTags(r.tags),
       category: r.category,
       author: r.author,
+      rank: 0,
     }));
   }
-  const rows = data as { article_type: string; article_id: string; title: string; snippet: string; tags: string | string[]; category: string; author: string }[];
+  const rows = data as { article_type: string; article_id: string; title: string; snippet: string; tags: string | string[]; category: string; author: string; rank: number }[];
   return rows.map(r => ({
     articleType: r.article_type,
     articleId: r.article_id,
@@ -381,5 +542,83 @@ export async function searchArticles(query: string, limit = 50): Promise<SearchR
     tags: safeParseTags(r.tags),
     category: r.category,
     author: r.author,
+    rank: r.rank,
   }));
+}
+
+// --- Recommendations (基于标签偏好 + 冷启动) ---
+
+export interface RecommendedArticle {
+  id: number;
+  title: string;
+  tags: string[];
+  category: string;
+  author: string;
+  description: string;
+  score: number;
+  reason: string;
+}
+
+export async function getRecommendedArticles(limit = 3): Promise<RecommendedArticle[]> {
+  const client = getClient();
+
+  const { data: activities } = await client.from('activities')
+    .select('article_id')
+    .eq('article_type', 'imported')
+    .order('created_at', { ascending: false })
+    .limit(50);
+
+  const readIds = new Set((activities as { article_id: string }[] | null)?.map(a => a.article_id) || []);
+
+  const { data: allArticles } = await client.from('imported_articles')
+    .select('id, title, content, tags, category, author, created_at')
+    .order('created_at', { ascending: false });
+
+  const articles = (allArticles as ImportedArticleRow[] | null) || [];
+
+  if (articles.length === 0) return [];
+
+  const tagFreq = new Map<string, number>();
+  for (const a of articles) {
+    if (readIds.has(String(a.id))) {
+      for (const t of safeParseTags(a.tags)) {
+        tagFreq.set(t, (tagFreq.get(t) || 0) + 1);
+      }
+    }
+  }
+
+  const topTags = [...tagFreq.entries()].sort((a, b) => b[1] - a[1]).slice(0, 10).map(([t]) => t);
+
+  const unread = articles.filter(a => !readIds.has(String(a.id)));
+
+  if (topTags.length === 0 || unread.length === 0) {
+    return unread.slice(0, limit).map(a => ({
+      id: a.id,
+      title: a.title,
+      tags: safeParseTags(a.tags),
+      category: a.category,
+      author: a.author,
+      description: a.content.slice(0, 120),
+      score: 0,
+      reason: '最新内容',
+    }));
+  }
+
+  const scored = unread.map(a => {
+    const tags = safeParseTags(a.tags);
+    const matchCount = tags.filter(t => topTags.includes(t)).length;
+    const score = matchCount * 10 + (tags.length > 0 ? matchCount / tags.length : 0);
+    return {
+      id: a.id,
+      title: a.title,
+      tags,
+      category: a.category,
+      author: a.author,
+      description: a.content.slice(0, 120),
+      score,
+      reason: matchCount > 0 ? `匹配标签 ${matchCount} 个` : '最新内容',
+    };
+  }).sort((a, b) => b.score - a.score);
+
+  return scored.slice(0, limit);
 }

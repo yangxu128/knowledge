@@ -110,3 +110,50 @@ export async function discoverTagRelations(tags: string[], onLog?: (msg: string)
 export function getLLMConfig() {
   return { baseUrl: LLM_BASE_URL, model: LLM_MODEL, configured: !!LLM_API_KEY };
 }
+
+export interface ArticleKeyword {
+  keyword: string;
+  weight: number;
+}
+
+export async function extractKeywords(title: string, content: string, onLog?: (msg: string) => void): Promise<ArticleKeyword[]> {
+  if (!LLM_API_KEY) throw new Error('LLM_API_KEY 未配置');
+  const truncatedContent = content.slice(0, 2000);
+  onLog?.(`[关键词提取] 标题: ${title.slice(0, 50)}`);
+  let resp = '';
+  try {
+    resp = await callLLM([
+      { role: 'system', content: `你是文章关键词提取助手。从给定文章中提取 5-10 个最能代表文章主题的关键词。
+
+返回JSON数组，格式：
+[{"keyword":"关键词","weight":0.9}]
+
+要求：
+- keyword：中文或英文关键词，2-8个字
+- weight：0-1 之间，表示该关键词对文章主题的重要程度
+- 只返回 JSON，不要其他内容` },
+      { role: 'user', content: `标题：${title}\n\n内容：\n${truncatedContent}` },
+    ], onLog);
+  } catch (e: any) {
+    onLog?.(`[错误] ${e.message}`);
+    throw new Error('关键词提取失败: ' + e.message);
+  }
+  try {
+    const cleaned = resp.trim().replace(/```json\s*/g, '').replace(/```\s*/g, '');
+    const match = cleaned.match(/\[[\s\S]*?\]/);
+    if (!match) {
+      onLog?.(`[解析失败] 未找到JSON数组`);
+      return [];
+    }
+    const parsed = JSON.parse(match[0]) as { keyword?: string; weight?: number }[];
+    return parsed
+      .filter(r => r.keyword && typeof r.keyword === 'string')
+      .map(r => ({
+        keyword: String(r.keyword).trim(),
+        weight: Math.min(1, Math.max(0, r.weight ?? 0.5)),
+      }));
+  } catch (e: any) {
+    onLog?.(`[解析错误] ${e.message}`);
+    return [];
+  }
+}

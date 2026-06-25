@@ -13,6 +13,17 @@ interface Activity {
   createdAt: string;
 }
 
+interface Recommendation {
+  id: number;
+  title: string;
+  tags: string[];
+  category: string;
+  author: string;
+  description: string;
+  score: number;
+  reason: string;
+}
+
 const actionIcons: Record<string, { icon: string; color: string; bg: string }> = {
   '阅读了': { icon: 'fa-book-open', color: 'text-sage', bg: 'bg-sage-light' },
   '导入了': { icon: 'fa-file-import', color: 'text-accent', bg: 'bg-accent-light' },
@@ -25,10 +36,32 @@ const actionIcons: Record<string, { icon: string; color: string; bg: string }> =
 export default function HomeClient({ articles }: { articles: ArticleSummary[] }) {
   const { data: actData } = useApi<{ activities: Activity[] }>('/api/activities');
   const { data: impData } = useApi<{ articles: { id: number }[] }>('/api/imported');
+  const { data: recData } = useApi<{ recommendations: Recommendation[] }>('/api/recommendations');
   const activities = actData?.activities || [];
   const importedCount = impData?.articles?.length || 0;
+  const recommendations = recData?.recommendations || [];
 
-  const todayPicks = articles.slice(0, 3);
+  const todayPicks = recommendations.length > 0
+    ? recommendations.map(r => ({
+        type: 'recommended' as const,
+        href: `/imported?id=${r.id}`,
+        title: r.title,
+        tags: r.tags,
+        category: r.category,
+        author: r.author,
+        description: r.description,
+        reason: r.reason,
+      }))
+    : articles.slice(0, 3).map(a => ({
+        type: 'fallback' as const,
+        href: `/knowledge/${a.slug}`,
+        title: a.title,
+        tags: a.tags,
+        category: a.category,
+        author: a.author,
+        description: a.description,
+        reason: '',
+      }));
   const totalTags = [...new Set(articles.flatMap(a => a.tags))].length;
   const totalCategories = [...new Set(articles.map(a => a.category))].length;
 
@@ -63,7 +96,7 @@ export default function HomeClient({ articles }: { articles: ArticleSummary[] })
               const c = tagColorMap[article.category] || { bg: 'bg-sage-light', text: 'text-sage' };
               const icon = iconMap[article.tags[0]] || 'fa-file-alt';
               return (
-                <a key={article.slug} href={`/knowledge/${article.slug}`} className={`bg-white rounded-2xl border border-warm overflow-hidden card-hover cursor-pointer stagger-${i+1} page-enter`}>
+                <a key={i} href={article.href} className={`bg-white rounded-2xl border border-warm overflow-hidden card-hover cursor-pointer stagger-${i+1} page-enter`}>
                   <div className={`h-32 flex items-center justify-center ${c.bg}`}>
                     <i className={`fas text-3xl opacity-40 ${icon} ${c.text}`}></i>
                   </div>
@@ -71,6 +104,9 @@ export default function HomeClient({ articles }: { articles: ArticleSummary[] })
                     <div className="flex items-center gap-2 mb-2">
                       <span className={`text-xs font-medium px-2 py-0.5 rounded-full ${c.text} ${c.bg}`}>{article.tags[0]}</span>
                       <span className="text-xs text-slate-400">{article.category}</span>
+                      {article.type === 'recommended' && article.reason && (
+                        <span className="text-xs px-1.5 py-0.5 rounded-full bg-accent-light text-accent">{article.reason}</span>
+                      )}
                     </div>
                     <h3 className="font-semibold text-ink mb-2 line-clamp-2">{article.title}</h3>
                     <p className="text-sm text-slate-500 line-clamp-2">{article.description}</p>
