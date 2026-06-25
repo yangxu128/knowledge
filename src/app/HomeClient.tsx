@@ -127,7 +127,7 @@ export default function HomeClient({ articles }: { articles: ArticleSummary[] })
                 <p>暂无动态，阅读或导入文章后会自动记录</p>
               </div>
             ) : (
-              <div className="relative pl-8 space-y-6">
+              <div className="relative pl-8 max-h-[560px] overflow-y-auto pr-2 activities-scroll">
                 <div className="timeline-line"></div>
                 {activities.map((act, i) => {
                   const style = actionIcons[act.action] || { icon: 'fa-circle', color: 'text-slate-500', bg: 'bg-warm' };
