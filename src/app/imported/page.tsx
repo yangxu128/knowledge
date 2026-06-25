@@ -41,7 +41,11 @@ export default function ImportedPage() {
       return;
     }
 
+    setArticle(null);
+    let cancelled = false;
+
     fetch(`/api/imported?id=${id}`).then(r => r.json()).then(d => {
+      if (cancelled) return;
       if (d.article) {
         const raw = d.article;
         const { meta } = parseFrontmatter(raw.content);
@@ -55,8 +59,14 @@ export default function ImportedPage() {
           description: raw.description || (typeof meta.description === 'string' ? meta.description : raw.description),
         };
         setArticle(a);
+        setRenderedContent('');
+        setHeadings([]);
+        setProgressBar(0);
+        setEditMode(false);
+        restoredRef.current = false;
         fetch('/api/activities', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ action: '阅读了', articleType: 'imported', articleId: String(d.article.id), articleTitle: d.article.title, articleHref: `/imported?id=${d.article.id}` }) }).catch(() => {});
         fetch('/api/progress?articleType=imported&articleId=' + d.article.id).then(r => r.json()).then(p => {
+          if (cancelled) return;
           const restore = (progress: number | null) => {
             if (typeof progress === 'number' && progress > 0) {
               requestAnimationFrame(() => {
@@ -82,13 +92,15 @@ export default function ImportedPage() {
         })
           .then(r => r.json())
           .then(d => {
+            if (cancelled) return;
             if (d.html) setRenderedContent(d.html);
             if (d.headings) setHeadings(d.headings);
           })
           .catch(() => {});
       }
     }).catch(() => {});
-  }, []);
+    return () => { cancelled = true; };
+  }, [typeof window !== 'undefined' ? window.location.search : '']);
 
   useEffect(() => {
     function onScroll() {
