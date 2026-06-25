@@ -7,13 +7,13 @@ export const dynamic = 'force-dynamic';
 export default async function TagPage({ params, searchParams }: { params: Promise<{ tag: string }>; searchParams: Promise<{ from?: string }> }) {
   const { tag } = await params;
   const { from } = await searchParams;
-  const builtinArticles = getArticlesByTag(tag);
+  const builtinArticles = await getArticlesByTag(tag);
 
   const importedArticles = (await getImportedArticles()).filter(a => a.tags.includes(tag));
 
   const allArticles = [
     ...builtinArticles.map(a => ({ title: a.title, description: a.description || '', tags: a.tags, category: a.category, published: a.published, author: a.author || '', href: `/knowledge/${a.slug}` })),
-    ...importedArticles.map(a => ({ title: a.title, description: a.content.replace(/^---[\s\S]*?---\n*/, '').slice(0, 120), tags: a.tags, category: a.category || '导入知识', published: a.published || '', author: a.author || '', href: `/imported?id=${a.id}` })),
+    ...importedArticles.map(a => ({ title: a.title, description: a.content.replace(/^---[\s\S]*?---\n*/, '').slice(0, 120), tags: a.tags, category: a.category || '导入知识', published: a.published || '', author: a.author || '', href: `/knowledge/${a.id}` })),
   ];
 
   const backHref = from === 'graph' ? '/graph' : from === 'search' ? '/search' : '/tags';

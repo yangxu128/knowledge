@@ -1,7 +1,7 @@
 import { getAllArticles } from '@/lib/articles';
 import GraphClient from './GraphClient';
 
-export default function GraphPage() {
-  const articles = getAllArticles();
+export default async function GraphPage() {
+  const articles = await getAllArticles();
   return <GraphClient articles={articles} />;
 }

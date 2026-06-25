@@ -152,7 +152,7 @@ export default function ReviewPage() {
                 <p className="text-slate-500 text-center mb-2">分类：{currentCard?.category}</p>
                 <p className="text-slate-400 text-sm">间隔：{currentCard?.interval} 天 | 重复：{currentCard?.repetitions} 次</p>
                 {currentCard?.articleId && (
-                  <a href={`/imported?id=${currentCard.articleId}`} className="text-sm text-accent mt-3 hover:underline">
+                  <a href={`/knowledge/${currentCard.articleId}`} className="text-sm text-accent mt-3 hover:underline">
                     <i className="fas fa-external-link-alt mr-1"></i>查看原文
                   </a>
                 )}

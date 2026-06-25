@@ -10,11 +10,13 @@ create table if not exists users (
   created_at timestamptz default now()
 );
 
--- Imported articles
+-- Imported articles (also stores admin-edited articles with slug)
 create table if not exists imported_articles (
   id bigserial primary key,
+  slug text unique,
   title text not null default '未命名',
   content text not null default '',
+  description text default '',
   tags jsonb default '[]'::jsonb,
   category text default '',
   published date default current_date,
@@ -22,6 +24,10 @@ create table if not exists imported_articles (
   source text default '',
   created_at timestamptz default now()
 );
+
+-- 增量添加 slug/description 列（表已存在时）
+alter table imported_articles add column if not exists slug text unique;
+alter table imported_articles add column if not exists description text default '';
 
 -- pg_trgm 扩展：支持中文模糊匹配（trigram）
 create extension if not exists pg_trgm;
@@ -126,8 +132,8 @@ returns table (
 begin
   return query
   select
-    'imported'::text as article_type,
-    i.id::text as article_id,
+    case when i.slug is not null then 'knowledge'::text else 'imported'::text end as article_type,
+    case when i.slug is not null then i.slug else i.id::text end as article_id,
     i.title,
     ts_headline('simple', i.content, plainto_tsquery('simple', search_query),
       'MaxWords=35, MinWords=15, ShortWord=3, MaxFragments=2, FragmentDelimiter=" ... ", HighlightStart="<mark>", HighlightEnd="</mark>"') as snippet,

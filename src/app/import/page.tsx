@@ -74,7 +74,7 @@ export default function ImportPage() {
         source: 'markdown',
       });
       if (data.error) throw new Error(data.error);
-      setStatus({ type: 'redirect', message: `成功导入「${title}」，正在跳转查看...`, href: `/imported?id=${data.id}`, hrefLabel: '立即查看' });
+      setStatus({ type: 'redirect', message: `成功导入「${title}」，正在跳转查看...`, href: `/knowledge/${data.id}`, hrefLabel: '立即查看' });
       setMdContent(''); setMdTitle(''); setMdTags(''); setMdCategory('');
     } catch (err: unknown) {
       const message = err instanceof Error ? err.message : '请检查格式';
@@ -104,7 +104,7 @@ export default function ImportPage() {
       const title = file.name.replace(/\.(md|markdown|txt)$/i, '');
       const data = await saveToDb({ title, content, tags: [], category: '导入', source: 'file' });
       if (data.error) { setStatus({ type: 'error', message: `导入失败：${data.error}` }); return; }
-      setStatus({ type: 'redirect', message: `成功导入「${file.name}」，正在跳转查看...`, href: `/imported?id=${data.id}`, hrefLabel: '立即查看' });
+      setStatus({ type: 'redirect', message: `成功导入「${file.name}」，正在跳转查看...`, href: `/knowledge/${data.id}`, hrefLabel: '立即查看' });
     };
     reader.onerror = () => setStatus({ type: 'error', message: '文件读取失败' });
     reader.readAsText(file);
@@ -134,7 +134,7 @@ export default function ImportPage() {
         source: urlInput.trim(),
       });
       if (data.error) throw new Error(data.error);
-      setStatus({ type: 'redirect', message: `成功抓取「${scraped.title || urlInput}」，正在跳转查看...`, href: `/imported?id=${data.id}`, hrefLabel: '立即查看' });
+      setStatus({ type: 'redirect', message: `成功抓取「${scraped.title || urlInput}」，正在跳转查看...`, href: `/knowledge/${data.id}`, hrefLabel: '立即查看' });
       setUrlInput('');
     } catch (err: unknown) {
       const message = err instanceof Error ? err.message : '网络错误';
@@ -173,7 +173,7 @@ export default function ImportPage() {
       if (!res.ok || result.error) throw new Error(result.error || '导入失败');
       const articles = result.articles || [];
       const lastId = articles[articles.length - 1]?.id;
-      setStatus({ type: 'redirect', message: `成功批量导入 ${result.count ?? articles.length} 条知识，正在跳转查看...`, href: lastId ? `/imported?id=${lastId}` : '/imported', hrefLabel: '查看最新一条' });
+      setStatus({ type: 'redirect', message: `成功批量导入 ${result.count ?? articles.length} 条知识，正在跳转查看...`, href: lastId ? `/knowledge/${lastId}` : '/library', hrefLabel: '查看最新一条' });
       setJsonInput('');
     } catch (err: unknown) {
       const message = err instanceof Error ? err.message : '请检查格式';
@@ -264,7 +264,7 @@ export default function ImportPage() {
             <button onClick={handleMarkdownImport} className="px-6 py-2.5 bg-accent text-white rounded-xl font-medium shadow-md shadow-accent/20 hover:shadow-lg transition-all">
               <i className="fas fa-file-import mr-2"></i>导入并查看
             </button>
-            <a href="/imported" className="text-sm text-slate-500 hover:text-ink">查看已导入的 →</a>
+            <a href="/library" className="text-sm text-slate-500 hover:text-ink">查看已导入的 →</a>
           </div>
         </div>
       )}
@@ -308,7 +308,7 @@ export default function ImportPage() {
             <button onClick={handleJsonImport} className="px-6 py-2.5 bg-accent text-white rounded-xl font-medium shadow-md shadow-accent/20 hover:shadow-lg transition-all">
               <i className="fas fa-file-import mr-2"></i>批量导入（最多 {MAX_BATCH_ITEMS} 条）
             </button>
-            <a href="/imported" className="text-sm text-slate-500 hover:text-ink">查看已导入的 →</a>
+            <a href="/library" className="text-sm text-slate-500 hover:text-ink">查看已导入的 →</a>
           </div>
         </div>
       )}

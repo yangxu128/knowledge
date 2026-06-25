@@ -173,7 +173,7 @@ export default function GraphClient({ articles: serverArticles }: { articles: Ar
       const orbitIdx = existing.length;
       const orbitAngle = (orbitIdx / Math.max(tagNode.count, 1)) * Math.PI * 2 + Math.random() * 0.3;
       const orbitRadius = 80 + tagNode.r;
-      const href = a.slug ? `/knowledge/${a.slug}` : `/imported?id=${a.id}`;
+      const href = a.slug ? `/knowledge/${a.slug}` : `/knowledge/${a.id}`;
       const artKey = a.slug ? `s:${a.slug}` : `i:${a.id}`;
       const prevArt = savedPos.get(artKey);
 
@@ -789,7 +789,7 @@ export default function GraphClient({ articles: serverArticles }: { articles: Ar
         if (n.type === 'tag') {
           posMap.set(n.id, { x: n.x, y: n.y, z: n.z });
         } else if (n.href) {
-          const key = n.href.startsWith('/knowledge/') ? `s:${n.href.replace('/knowledge/', '')}` : `i:${n.href.replace('/imported?id=', '')}`;
+          const key = `s:${n.href.replace('/knowledge/', '')}`;
           posMap.set(key, { x: n.x, y: n.y, z: n.z });
         }
       });

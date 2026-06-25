@@ -44,7 +44,7 @@ export default function HomeClient({ articles }: { articles: ArticleSummary[] })
   const todayPicks = recommendations.length > 0
     ? recommendations.map(r => ({
         type: 'recommended' as const,
-        href: `/imported?id=${r.id}`,
+        href: `/knowledge/${r.id}`,
         title: r.title,
         tags: r.tags,
         category: r.category,

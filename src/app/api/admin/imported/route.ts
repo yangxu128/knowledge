@@ -87,7 +87,7 @@ export async function POST(request: Request) {
     const published = isValidDateString(item.published) ? item.published : today;
 
     const article = await createImportedArticle({ title, content, tags, category, published, author, source });
-    await addActivity('导入了', 'imported', String(article.id), article.title, `/imported?id=${article.id}`);
+    await addActivity('导入了', 'imported', String(article.id), article.title, `/knowledge/${article.id}`);
     results.push(article);
   }
 

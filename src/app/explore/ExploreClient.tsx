@@ -66,7 +66,7 @@ export default function ExploreClient({ serverArticles }: { serverArticles: Arti
             const colorClass = tagColors[i % tagColors.length];
             return (
               <a key={article.slug}
-                href={article.isImported ? `/imported?id=${article.slug}` : `/knowledge/${article.slug}`}
+                href={`/knowledge/${article.slug}`}
                 className="block bg-white rounded-2xl border border-warm p-5 card-hover break-inside-avoid">
                 <div className="flex items-center gap-2 mb-3">
                   {article.tags.slice(0, 2).map(tag => (

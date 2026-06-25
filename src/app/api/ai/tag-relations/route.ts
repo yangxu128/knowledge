@@ -15,7 +15,7 @@ export async function POST() {
   if (!user) return NextResponse.json({ error: '未登录' }, { status: 401 });
 
   const dbTags = await getDbTags();
-  const knowledgeTags = getKnowledgeTags();
+  const knowledgeTags = await getKnowledgeTags();
   const tags = [...new Set([...dbTags, ...knowledgeTags])];
   if (tags.length < 2) return NextResponse.json({ error: `至少需要2个标签，当前${tags.length}个: ${tags.join(',')}` }, { status: 400 });
 

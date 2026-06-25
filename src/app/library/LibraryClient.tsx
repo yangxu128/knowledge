@@ -126,7 +126,7 @@ export default function LibraryClient({ articles }: { articles: ArticleSummary[]
                 return (
                   <a
                     key={article.slug}
-                    href={isImported ? `/imported?id=${article.slug}` : `/knowledge/${article.slug}`}
+                    href={`/knowledge/${article.slug}`}
                     className="break-inside-avoid bg-white rounded-2xl border border-warm overflow-hidden card-hover cursor-pointer mb-5 block"
                   >
                     <div className="p-5">
@@ -154,7 +154,7 @@ export default function LibraryClient({ articles }: { articles: ArticleSummary[]
                 return (
                   <a
                     key={article.slug}
-                    href={isImported ? `/imported?id=${article.slug}` : `/knowledge/${article.slug}`}
+                    href={`/knowledge/${article.slug}`}
                     className="flex items-center gap-4 p-4 bg-white rounded-xl border border-warm hover:border-warm/80 cursor-pointer transition-all hover:shadow-sm block"
                   >
                     <div className={`w-12 h-12 rounded-xl flex items-center justify-center shrink-0 ${c.bg}`}>

@@ -1,9 +1,9 @@
 import { getAllTags, getAllArticles } from '@/lib/articles';
 import { tagColors } from '@/lib/shared';
 
-export default function TagsPage() {
-  const tags = getAllTags();
-  const articles = getAllArticles();
+export default async function TagsPage() {
+  const tags = await getAllTags();
+  const articles = await getAllArticles();
 
   return (
     <div className="page-enter max-w-6xl mx-auto px-6 py-10">

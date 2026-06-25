@@ -3,8 +3,8 @@ import HomeClient from './HomeClient';
 
 export const revalidate = 3600;
 
-export default function Home() {
-  const articles = getAllArticles();
+export default async function Home() {
+  const articles = await getAllArticles();
   const serverArticles = articles.map(a => ({
     slug: a.slug,
     title: a.title,

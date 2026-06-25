@@ -37,8 +37,8 @@ interface UserRow {
   id: number; username: string; password: string; role: string; created_at: string;
 }
 interface ImportedArticleRow {
-  id: number; title: string; content: string; tags: string | string[]; category: string;
-  published: string; author: string; source: string; created_at: string;
+  id: number; slug: string | null; title: string; content: string; description: string | null;
+  tags: string | string[]; category: string; published: string; author: string; source: string; created_at: string;
 }
 interface ReviewCardRow {
   id: number; title: string; description: string; tags: string | string[]; category: string;
@@ -125,8 +125,10 @@ export async function deleteUser(id: number): Promise<boolean> {
 
 export interface ImportedArticle {
   id: number;
+  slug: string | null;
   title: string;
   content: string;
+  description: string;
   tags: string[];
   category: string;
   published: string;
@@ -136,7 +138,7 @@ export interface ImportedArticle {
 }
 
 function mapImportedArticle(r: ImportedArticleRow): ImportedArticle {
-  return { id: r.id, title: r.title, content: r.content, tags: safeParseTags(r.tags), category: r.category, published: r.published, author: r.author, source: r.source, createdAt: r.created_at };
+  return { id: r.id, slug: r.slug, title: r.title, content: r.content, description: r.description || '', tags: safeParseTags(r.tags), category: r.category, published: r.published, author: r.author, source: r.source, createdAt: r.created_at };
 }
 
 export async function getImportedArticles(): Promise<ImportedArticle[]> {
@@ -177,7 +179,7 @@ export async function createImportedArticle(article: { title: string; content: s
   const { data, error } = await getClient().from('imported_articles').insert(row).select().single();
   if (error) throw error;
   const created = data as ImportedArticleRow;
-  return { id: created.id, ...article, createdAt: created.created_at };
+  return mapImportedArticle(created);
 }
 
 export async function updateImportedArticle(id: number, article: { title: string; content: string; tags: string[]; category: string; published: string; author: string; source: string }): Promise<boolean> {
@@ -196,6 +198,62 @@ export async function updateImportedArticle(id: number, article: { title: string
 
 export async function deleteImportedArticle(id: number): Promise<boolean> {
   const { error } = await getClient().from('imported_articles').delete().eq('id', id);
+  if (error) throw error;
+  return true;
+}
+
+// --- Slug-based articles (admin-edited, stored in imported_articles with slug) ---
+
+export async function getArticlesWithSlug(): Promise<ImportedArticle[]> {
+  const { data, error } = await getClient()
+    .from('imported_articles')
+    .select('*')
+    .not('slug', 'is', null)
+    .order('published', { ascending: false });
+  if (error) throw error;
+  return (data as ImportedArticleRow[]).map(mapImportedArticle);
+}
+
+export async function getArticleBySlug(slug: string): Promise<ImportedArticle | null> {
+  const { data, error } = await getClient().from('imported_articles').select('*').eq('slug', slug).maybeSingle();
+  if (error) throw error;
+  if (!data) return null;
+  return mapImportedArticle(data as ImportedArticleRow);
+}
+
+export async function createArticleBySlug(article: { slug: string; title: string; description: string; content: string; tags: string[]; category: string; published: string; author: string }): Promise<ImportedArticle> {
+  const row = {
+    slug: article.slug,
+    title: article.title,
+    description: article.description,
+    content: article.content,
+    tags: tagsToJson(article.tags),
+    category: article.category,
+    published: article.published || new Date().toISOString().split('T')[0],
+    author: article.author,
+    source: 'admin',
+  };
+  const { data, error } = await getClient().from('imported_articles').insert(row).select().single();
+  if (error) throw error;
+  return mapImportedArticle(data as ImportedArticleRow);
+}
+
+export async function updateArticleBySlug(slug: string, article: { title: string; description: string; content: string; tags: string[]; category: string; published: string; author: string }): Promise<boolean> {
+  const { error } = await getClient().from('imported_articles').update({
+    title: article.title,
+    description: article.description,
+    content: article.content,
+    tags: tagsToJson(article.tags),
+    category: article.category,
+    published: article.published,
+    author: article.author,
+  }).eq('slug', slug);
+  if (error) throw error;
+  return true;
+}
+
+export async function deleteArticleBySlug(slug: string): Promise<boolean> {
+  const { error } = await getClient().from('imported_articles').delete().eq('slug', slug);
   if (error) throw error;
   return true;
 }

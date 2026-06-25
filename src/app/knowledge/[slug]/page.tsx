@@ -1,17 +1,31 @@
-import { getArticle, getAllArticles } from '@/lib/articles';
+import { getArticle, getAllArticles, getImportedArticleAsArticle } from '@/lib/articles';
 import { notFound } from 'next/navigation';
 import type { Metadata } from 'next';
 import ExportButton from './ExportButton';
 
+export const dynamicParams = true;
+
 export async function generateStaticParams() {
-  const articles = getAllArticles();
+  const articles = await getAllArticles();
   return articles.map(a => ({ slug: a.slug }));
+}
+
+async function resolveArticle(slug: string) {
+  const article = await getArticle(slug);
+  if (article) return { article, isImported: false };
+  const numId = Number(slug);
+  if (Number.isFinite(numId) && numId > 0 && /^\d+$/.test(slug)) {
+    const imported = await getImportedArticleAsArticle(numId);
+    if (imported) return { article: imported, isImported: true };
+  }
+  return null;
 }
 
 export async function generateMetadata({ params }: { params: Promise<{ slug: string }> }): Promise<Metadata> {
   const { slug } = await params;
-  const article = await getArticle(slug);
-  if (!article) return {};
+  const resolved = await resolveArticle(slug);
+  if (!resolved) return {};
+  const { article } = resolved;
   return {
     title: article.title,
     description: article.description,
@@ -22,22 +36,22 @@ export async function generateMetadata({ params }: { params: Promise<{ slug: str
 
 export default async function ArticlePage({ params }: { params: Promise<{ slug: string }> }) {
   const { slug } = await params;
-  const article = await getArticle(slug);
-  if (!article) notFound();
+  const resolved = await resolveArticle(slug);
+  if (!resolved) notFound();
+  const { article, isImported } = resolved;
 
-  const allArticles = getAllArticles();
+  const articleType = isImported ? 'imported' : 'knowledge';
+  const allArticles = await getAllArticles();
   const relatedArticles = allArticles
     .filter(a => a.slug !== slug && a.tags.some(t => article.tags.includes(t)))
     .slice(0, 3);
 
   return (
     <div className="page-enter">
-      {/* Reading Progress Bar */}
       <div id="readingProgress" className="fixed top-16 left-0 h-0.5 bg-accent z-40 transition-all duration-150" style={{ width: '0%' }}></div>
 
       <div className="max-w-6xl mx-auto px-6 py-10">
         <div className="flex gap-8">
-          {/* Main Content */}
           <div className="flex-1 min-w-0">
             <a href="/library" className="inline-flex items-center gap-2 text-sm text-slate-500 hover:text-ink mb-6">
               <i className="fas fa-arrow-left text-xs"></i>返回知识库
@@ -51,12 +65,14 @@ export default async function ArticlePage({ params }: { params: Promise<{ slug: 
                   </a>
                 ))}
                 <span className="text-xs text-slate-400">{article.category}</span>
+                {isImported && <span className="text-xs px-2 py-0.5 rounded-full bg-accent-light text-accent">导入</span>}
               </div>
               <h1 className="text-3xl md:text-4xl font-bold text-ink mb-3">{article.title}</h1>
               <div className="flex items-center gap-4 text-sm text-slate-400">
                 <span><i className="fas fa-user mr-1"></i>{article.author}</span>
                 <span><i className="fas fa-calendar mr-1"></i>{article.published}</span>
                 {article.updated && <span><i className="fas fa-edit mr-1"></i>更新于 {article.updated}</span>}
+                {article.source && <span><i className="fas fa-link mr-1"></i>{article.source}</span>}
                 <ExportButton
                   title={article.title}
                   content={article.rawContent}
@@ -70,7 +86,6 @@ export default async function ArticlePage({ params }: { params: Promise<{ slug: 
 
             <div className="reading-mode" dangerouslySetInnerHTML={{ __html: article.contentHtml }} />
 
-            {/* Related Articles */}
             {relatedArticles.length > 0 && (
               <div className="mt-16 pt-8 border-t border-warm">
                 <h2 className="text-lg font-bold text-ink mb-4">
@@ -93,7 +108,6 @@ export default async function ArticlePage({ params }: { params: Promise<{ slug: 
             )}
           </div>
 
-          {/* Floating TOC */}
           {article.headings.length > 0 && (
             <div className="floating-toc">
               <h3 className="text-xs font-semibold text-slate-400 uppercase tracking-wider mb-3">目录</h3>
@@ -115,16 +129,16 @@ export default async function ArticlePage({ params }: { params: Promise<{ slug: 
         </div>
       </div>
 
-      {/* Client-side scripts for reading progress and TOC highlight */}
       <script dangerouslySetInnerHTML={{ __html: `
         (function() {
           var slug = ${JSON.stringify(slug)};
-          var progressKey = 'progress:knowledge:' + slug;
+          var articleType = ${JSON.stringify(articleType)};
+          var progressKey = 'progress:' + articleType + ':' + slug;
           var restored = false;
 
           try {
             var title = ${JSON.stringify(article.title)};
-            fetch('/api/activities', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ action: '阅读了', articleType: 'knowledge', articleId: slug, articleTitle: title, articleHref: '/knowledge/' + slug }), keepalive: true });
+            fetch('/api/activities', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ action: '阅读了', articleType: articleType, articleId: slug, articleTitle: title, articleHref: '/knowledge/' + slug }), keepalive: true });
           } catch(e) {}
 
           function restoreProgress(progress) {
@@ -139,7 +153,7 @@ export default async function ArticlePage({ params }: { params: Promise<{ slug: 
             }
           }
 
-          fetch('/api/progress?articleType=knowledge&articleId=' + slug)
+          fetch('/api/progress?articleType=' + articleType + '&articleId=' + slug)
             .then(function(r) { return r.json(); })
             .then(function(p) {
               if (p.guest) {
@@ -163,7 +177,7 @@ export default async function ArticlePage({ params }: { params: Promise<{ slug: 
             if (saveTimer) clearTimeout(saveTimer);
             saveTimer = setTimeout(function() {
               localStorage.setItem(progressKey, String(pct));
-              fetch('/api/progress', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ articleType: 'knowledge', articleId: slug, progress: pct }), keepalive: true }).catch(function(){});
+              fetch('/api/progress', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ articleType: articleType, articleId: slug, progress: pct }), keepalive: true }).catch(function(){});
             }, 500);
           });
 

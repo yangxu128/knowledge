@@ -89,7 +89,7 @@ export default function SearchPage() {
           <p className="text-sm text-slate-400 mb-4">找到 {total} 个结果</p>
           <div className="space-y-3">
             {results.map((r, i) => {
-              const href = r.articleType === 'imported' ? `/imported?id=${r.articleId}` : `/knowledge/${r.articleId}`;
+              const href = `/knowledge/${r.articleId}`;
               const snippetHtml = r.snippet.includes('<mark>') ? r.snippet : highlight(r.snippet);
               return (
                 <a key={`${r.articleType}:${r.articleId}:${i}`} href={href}

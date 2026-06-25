@@ -1,8 +1,8 @@
 import { getAllArticles } from '@/lib/articles';
 import ExploreClient from './ExploreClient';
 
-export default function ExplorePage() {
-  const articles = getAllArticles();
+export default async function ExplorePage() {
+  const articles = await getAllArticles();
   const serverArticles = articles.map(a => ({
     slug: a.slug,
     title: a.title,
