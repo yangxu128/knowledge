@@ -1,10 +1,23 @@
 import { getArticle, getAllArticles } from '@/lib/articles';
 import { notFound } from 'next/navigation';
+import type { Metadata } from 'next';
 import ExportButton from './ExportButton';
 
 export async function generateStaticParams() {
   const articles = getAllArticles();
   return articles.map(a => ({ slug: a.slug }));
+}
+
+export async function generateMetadata({ params }: { params: Promise<{ slug: string }> }): Promise<Metadata> {
+  const { slug } = await params;
+  const article = await getArticle(slug);
+  if (!article) return {};
+  return {
+    title: article.title,
+    description: article.description,
+    openGraph: { title: article.title, description: article.description, type: 'article', publishedTime: article.published, authors: [article.author] },
+    keywords: article.tags,
+  };
 }
 
 export default async function ArticlePage({ params }: { params: Promise<{ slug: string }> }) {

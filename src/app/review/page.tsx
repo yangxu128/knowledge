@@ -124,7 +124,11 @@ export default function ReviewPage() {
           <div
             className={`flip-card w-full max-w-lg ${flipped ? 'flipped' : ''}`}
             style={{ height: '320px' }}
+            role="button"
+            tabIndex={0}
+            aria-label={flipped ? '复习卡片，已翻转' : '复习卡片，点击翻转'}
             onClick={() => !flipped && setFlipped(true)}
+            onKeyDown={(e) => { if ((e.key === 'Enter' || e.key === ' ') && !flipped) { e.preventDefault(); setFlipped(true); } }}
           >
             <div className="flip-card-inner relative w-full h-full">
               <div className="flip-card-front absolute inset-0 bg-white rounded-2xl border border-warm p-8 flex flex-col items-center justify-center cursor-pointer">

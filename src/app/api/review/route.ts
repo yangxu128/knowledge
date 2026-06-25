@@ -2,10 +2,16 @@ import { NextResponse } from 'next/server';
 import { getReviewCards, batchUpsertReviewCards, autoGenerateReviewCards, addReviewHistory, ReviewCard } from '@/lib/db';
 import { getCurrentUser } from '@/lib/auth';
 
+let _lastAutoGen = 0;
+
 export async function GET() {
   const user = await getCurrentUser();
   if (!user) return NextResponse.json({ cards: [] });
-  try { await autoGenerateReviewCards(); } catch {}
+  const now = Date.now();
+  if (now - _lastAutoGen > 60 * 60 * 1000) {
+    _lastAutoGen = now;
+    try { await autoGenerateReviewCards(); } catch {}
+  }
   return NextResponse.json({ cards: await getReviewCards() });
 }
 

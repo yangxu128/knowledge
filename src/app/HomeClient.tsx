@@ -34,9 +34,9 @@ const actionIcons: Record<string, { icon: string; color: string; bg: string }> =
 };
 
 export default function HomeClient({ articles }: { articles: ArticleSummary[] }) {
-  const { data: actData } = useApi<{ activities: Activity[] }>('/api/activities');
-  const { data: impData } = useApi<{ articles: { id: number }[] }>('/api/imported');
-  const { data: recData } = useApi<{ recommendations: Recommendation[] }>('/api/recommendations');
+  const { data: actData, isLoading: actLoading, error: actError } = useApi<{ activities: Activity[] }>('/api/activities');
+  const { data: impData, isLoading: impLoading } = useApi<{ articles: { id: number }[] }>('/api/imported');
+  const { data: recData, isLoading: recLoading } = useApi<{ recommendations: Recommendation[] }>('/api/recommendations');
   const activities = actData?.activities || [];
   const importedCount = impData?.articles?.length || 0;
   const recommendations = recData?.recommendations || [];
@@ -121,7 +121,11 @@ export default function HomeClient({ articles }: { articles: ArticleSummary[] })
         <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
           <div className="lg:col-span-2">
             <h2 className="text-xl font-bold text-ink mb-6">最近动态</h2>
-            {activities.length === 0 ? (
+            {actLoading ? (
+              <div className="text-center py-12 text-slate-400"><i className="fas fa-spinner fa-spin text-2xl"></i></div>
+            ) : actError ? (
+              <div className="text-center py-12 text-slate-400"><i className="fas fa-exclamation-circle text-2xl mb-2"></i><p className="text-sm">加载失败</p></div>
+            ) : activities.length === 0 ? (
               <div className="text-center py-12 text-slate-400">
                 <i className="fas fa-clock text-3xl mb-3"></i>
                 <p>暂无动态，阅读或导入文章后会自动记录</p>

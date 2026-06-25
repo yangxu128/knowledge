@@ -28,6 +28,8 @@ export default function ExploreClient({ serverArticles }: { serverArticles: Arti
 
   const allArticles = [...serverArticles, ...importedArticles];
   const tags = [...new Set(allArticles.flatMap(a => a.tags))];
+  const tagCountMap = new Map<string, number>();
+  for (const a of allArticles) for (const t of a.tags) tagCountMap.set(t, (tagCountMap.get(t) || 0) + 1);
 
   return (
     <div className="page-enter max-w-6xl mx-auto px-6 py-10">
@@ -43,7 +45,7 @@ export default function ExploreClient({ serverArticles }: { serverArticles: Arti
         <div className="flex flex-wrap gap-2.5">
           {tags.map((tag, i) => {
             const colorClass = tagColors[i % tagColors.length];
-            const count = allArticles.filter(a => a.tags.includes(tag)).length;
+            const count = tagCountMap.get(tag) || 0;
             return (
               <a key={tag} href={`/tags/${encodeURIComponent(tag)}`}
                 className={`tag-bubble px-4 py-2 rounded-full text-sm font-medium ${colorClass} cursor-pointer`}>

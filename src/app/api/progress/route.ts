@@ -15,8 +15,17 @@ export async function GET(request: Request) {
 export async function POST(request: Request) {
   const user = await getCurrentUser();
   if (!user) return NextResponse.json({ ok: true, guest: true });
-  const { articleType, articleId, progress } = await request.json();
-  if (!articleType || !articleId || typeof progress !== 'number') return NextResponse.json({ error: '参数不完整' }, { status: 400 });
+  let body: any;
+  try { body = await request.json(); } catch {
+    return NextResponse.json({ error: '无效数据' }, { status: 400 });
+  }
+  const { articleType, articleId, progress } = body;
+  if (typeof articleType !== 'string' || typeof articleId !== 'string' || !articleType || !articleId) {
+    return NextResponse.json({ error: '参数不完整' }, { status: 400 });
+  }
+  if (typeof progress !== 'number' || progress < 0 || progress > 1 || !Number.isFinite(progress)) {
+    return NextResponse.json({ error: 'progress 必须在 0-1 之间' }, { status: 400 });
+  }
   await setReadingProgress(articleType, articleId, progress);
   return NextResponse.json({ ok: true });
 }

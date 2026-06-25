@@ -25,6 +25,13 @@ export async function POST() {
   (async () => {
     const status = taskStatus.get(taskId)!;
     const onLog = (msg: string) => { status.logs.push(msg); };
+    const timeout = setTimeout(() => {
+      if (status.status === 'running') {
+        status.status = 'done';
+        status.errors.push('任务超时（5分钟）');
+        onLog('\n任务超时');
+      }
+    }, 5 * 60 * 1000);
     try {
       const results = await discoverTagRelations(tags, onLog);
       if (results.length > 0) await setTagRelations(results);
@@ -36,6 +43,8 @@ export async function POST() {
       status.status = 'done';
       status.errors.push(e.message || String(e));
       onLog(`\n失败: ${e.message}`);
+    } finally {
+      clearTimeout(timeout);
     }
   })();
 

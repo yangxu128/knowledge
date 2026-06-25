@@ -1,11 +1,10 @@
 import { NextResponse } from 'next/server';
-import { getImportedArticles, getImportedArticle } from '@/lib/db';
-import { parseFrontmatter } from '@/lib/shared';
+import { getImportedArticle, getImportedArticlesPaged } from '@/lib/db';
+import { getCurrentUser } from '@/lib/auth';
 
 function extractDescription(content: string): string {
-  const { meta, body } = parseFrontmatter(content);
-  if (meta.description && typeof meta.description === 'string') return meta.description;
-  const plain = body
+  const plain = content
+    .replace(/^---[\s\S]*?---/, '')
     .replace(/\{\/\*[\s\S]*?\*\/\}/g, '')
     .replace(/^#{1,6}\s+/gm, '')
     .replace(/!\[[^\]]*\]\([^)]*\)/g, '')
@@ -20,6 +19,8 @@ function extractDescription(content: string): string {
 }
 
 export async function GET(request: Request) {
+  const user = await getCurrentUser();
+  if (!user) return NextResponse.json({ error: '未登录' }, { status: 401 });
   const { searchParams } = new URL(request.url);
   const id = searchParams.get('id');
   if (id) {
@@ -29,21 +30,16 @@ export async function GET(request: Request) {
   }
   const page = Math.max(1, Number(searchParams.get('page') || '1'));
   const pageSize = Math.min(100, Math.max(1, Number(searchParams.get('pageSize') || '50')));
-  const allArticles = (await getImportedArticles()).map(a => {
-    const { meta } = parseFrontmatter(a.content);
-    return {
-      id: a.id,
-      title: a.title || (typeof meta.title === 'string' ? meta.title : a.title),
-      tags: a.tags.length > 0 ? a.tags : (Array.isArray(meta.tags) ? meta.tags : a.tags),
-      category: a.category || (typeof meta.category === 'string' ? meta.category : a.category),
-      published: a.published || (typeof meta.published === 'string' ? meta.published : a.published),
-      author: a.author || (typeof meta.author === 'string' ? meta.author : a.author),
-      source: a.source,
-      description: extractDescription(a.content),
-    };
-  });
-  const total = allArticles.length;
-  const start = (page - 1) * pageSize;
-  const articles = allArticles.slice(start, start + pageSize);
-  return NextResponse.json({ articles, total, page, pageSize, totalPages: Math.ceil(total / pageSize) });
+  const { articles, total } = await getImportedArticlesPaged(page, pageSize);
+  const list = articles.map(a => ({
+    id: a.id,
+    title: a.title,
+    tags: a.tags,
+    category: a.category,
+    published: a.published,
+    author: a.author,
+    source: a.source,
+    description: extractDescription(a.content),
+  }));
+  return NextResponse.json({ articles: list, total, page, pageSize, totalPages: Math.ceil(total / pageSize) });
 }

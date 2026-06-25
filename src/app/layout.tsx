@@ -7,8 +7,22 @@ import ThemeToggle from '@/components/ThemeToggle';
 const notoSansSC = Noto_Sans_SC({ subsets: ['latin'], weight: ['400','600'], display: 'swap', variable: '--font-noto', preload: true, adjustFontFallback: true });
 
 export const metadata: Metadata = {
-  title: '知海 — 你的第二大脑',
-  description: '让知识自然生长',
+  metadataBase: new URL('https://knowledge.example.com'),
+  title: { default: '知海 — 你的第二大脑', template: '%s · 知海' },
+  description: '让知识自然生长 — 记录、连接、复习，构建你的个人知识体系',
+  openGraph: {
+    type: 'website',
+    locale: 'zh_CN',
+    title: '知海 — 你的第二大脑',
+    description: '让知识自然生长 — 记录、连接、复习，构建你的个人知识体系',
+    siteName: '知海',
+  },
+  twitter: {
+    card: 'summary_large_image',
+    title: '知海 — 你的第二大脑',
+    description: '让知识自然生长 — 记录、连接、复习，构建你的个人知识体系',
+  },
+  robots: { index: true, follow: true },
 };
 
 const navItems = [
@@ -52,16 +66,17 @@ export default function RootLayout({ children }: { children: React.ReactNode }) 
                 <input
                   type="text"
                   name="q"
+                  aria-label="搜索知识"
                   placeholder="搜索知识..."
                   className="w-48 bg-warm/50 border border-warm rounded-full pl-9 pr-4 py-1.5 text-sm focus:outline-none focus:border-accent/30 search-glow transition-all placeholder:text-slate-400"
                 />
               </form>
-              <button id="quickCaptureBtn" className="btn-ghost px-3 py-1.5 rounded-full text-sm font-medium text-slate-600 flex items-center gap-1.5">
-                <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" width="12" height="12"><path d="M5 12h14"/><path d="M12 5v14"/></svg>
+              <button id="quickCaptureBtn" aria-label="快速记录" className="btn-ghost px-3 py-1.5 rounded-full text-sm font-medium text-slate-600 flex items-center gap-1.5">
+                <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" width="12" height="12" aria-hidden="true"><path d="M5 12h14"/><path d="M12 5v14"/></svg>
                 <span className="hidden sm:inline">记录</span>
               </button>
-              <button id="mobileMenuBtn" className="md:hidden w-8 h-8 flex items-center justify-center text-slate-500">
-                <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" width="18" height="18"><path d="M4 6h16"/><path d="M4 12h16"/><path d="M4 18h16"/></svg>
+              <button id="mobileMenuBtn" aria-label="菜单" className="md:hidden w-8 h-8 flex items-center justify-center text-slate-500">
+                <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" width="18" height="18" aria-hidden="true"><path d="M4 6h16"/><path d="M4 12h16"/><path d="M4 18h16"/></svg>
               </button>
               <ThemeToggle />
               <UserMenu />
@@ -79,7 +94,7 @@ export default function RootLayout({ children }: { children: React.ReactNode }) 
         {children}
 
         {/* Quick Capture Modal */}
-        <div id="captureModal" className="hidden fixed inset-0 z-50 flex items-start justify-center pt-32 bg-ink/30 backdrop-blur-sm">
+        <div id="captureModal" role="dialog" aria-modal="true" aria-label="快速记录" className="hidden fixed inset-0 z-50 flex items-start justify-center pt-32 bg-ink/30 backdrop-blur-sm">
           <div className="bg-paper rounded-2xl p-6 w-full max-w-lg shadow-2xl border border-warm mx-4">
             <div className="flex items-center gap-3 mb-4">
               <div className="w-9 h-9 rounded-xl bg-accent-light flex items-center justify-center">

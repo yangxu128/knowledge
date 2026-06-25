@@ -91,20 +91,20 @@ export async function countUsers(): Promise<number> {
 }
 
 export async function createUser(username: string, password: string, role: User['role'] = 'viewer'): Promise<User> {
-  const hash = bcrypt.hashSync(password, 10);
+  const hash = await bcrypt.hash(password, 10);
   const { data, error } = await getClient().from('users').insert({ username, password: hash, role }).select().single();
   if (error) throw error;
   return mapUser(data as UserRow);
 }
 
-export function verifyPassword(user: User, password: string): boolean {
-  return bcrypt.compareSync(password, user.password);
+export async function verifyPassword(user: User, password: string): Promise<boolean> {
+  return bcrypt.compare(password, user.password);
 }
 
 export async function updateUser(id: number, data: Partial<Pick<User, 'role' | 'password'>>): Promise<User | null> {
   const update: Record<string, string> = {};
   if (data.role) update.role = data.role;
-  if (data.password) update.password = bcrypt.hashSync(data.password, 10);
+  if (data.password) update.password = await bcrypt.hash(data.password, 10);
   if (Object.keys(update).length === 0) {
     const { data: row } = await getClient().from('users').select('*').eq('id', id).maybeSingle();
     return row ? mapUser(row as UserRow) : null;
@@ -143,6 +143,18 @@ export async function getImportedArticles(): Promise<ImportedArticle[]> {
   const { data, error } = await getClient().from('imported_articles').select('*').order('created_at', { ascending: false });
   if (error) throw error;
   return (data as ImportedArticleRow[]).map(mapImportedArticle);
+}
+
+export async function getImportedArticlesPaged(page: number, pageSize: number): Promise<{ articles: ImportedArticle[]; total: number }> {
+  const start = (page - 1) * pageSize;
+  const end = start + pageSize - 1;
+  const { data, count, error } = await getClient()
+    .from('imported_articles')
+    .select('*', { count: 'exact' })
+    .order('created_at', { ascending: false })
+    .range(start, end);
+  if (error) throw error;
+  return { articles: (data as ImportedArticleRow[]).map(mapImportedArticle), total: count || 0 };
 }
 
 export async function getImportedArticle(id: number): Promise<ImportedArticle | null> {
@@ -422,7 +434,13 @@ export interface ArticleRelation {
   sharedKeywords: string[];
 }
 
+let _relationsCache: { data: ArticleRelation[]; ts: number } | null = null;
+const RELATIONS_CACHE_TTL = 5 * 60 * 1000;
+
 export async function getArticleRelations(threshold = 0.3): Promise<ArticleRelation[]> {
+  if (_relationsCache && Date.now() - _relationsCache.ts < RELATIONS_CACHE_TTL) {
+    return _relationsCache.data.filter(r => r.similarity >= threshold);
+  }
   const client = getClient();
 
   const { data: keywords } = await client.from('article_keywords').select('article_id, keyword, weight');
@@ -474,7 +492,13 @@ export async function getArticleRelations(threshold = 0.3): Promise<ArticleRelat
     }
   }
 
-  return relations.sort((a, b) => b.similarity - a.similarity);
+  relations.sort((a, b) => b.similarity - a.similarity);
+  _relationsCache = { data: relations, ts: Date.now() };
+  return relations.filter(r => r.similarity >= threshold);
+}
+
+export function invalidateArticleRelationsCache(): void {
+  _relationsCache = null;
 }
 
 // --- Reading Progress ---
@@ -516,9 +540,10 @@ export async function searchArticles(query: string, limit = 50, offset = 0): Pro
     result_offset: offset,
   });
   if (error) {
+    const escaped = trimmed.replace(/[%_,\\]/g, c => '\\' + c);
     const { data: fallback, error: fbErr } = await client.from('imported_articles')
       .select('id, title, content, tags, category, author')
-      .or(`title.ilike.%${trimmed}%,content.ilike.%${trimmed}%`)
+      .or(`title.ilike.%${escaped}%,content.ilike.%${escaped}%`)
       .order('created_at', { ascending: false })
       .range(offset, offset + limit - 1);
     if (fbErr) return [];
@@ -560,6 +585,7 @@ export interface RecommendedArticle {
 }
 
 export async function getRecommendedArticles(limit = 3): Promise<RecommendedArticle[]> {
+  const safeLimit = Math.min(20, Math.max(1, limit));
   const client = getClient();
 
   const { data: activities } = await client.from('activities')
@@ -572,7 +598,8 @@ export async function getRecommendedArticles(limit = 3): Promise<RecommendedArti
 
   const { data: allArticles } = await client.from('imported_articles')
     .select('id, title, content, tags, category, author, created_at')
-    .order('created_at', { ascending: false });
+    .order('created_at', { ascending: false })
+    .limit(200);
 
   const articles = (allArticles as ImportedArticleRow[] | null) || [];
 
@@ -592,7 +619,7 @@ export async function getRecommendedArticles(limit = 3): Promise<RecommendedArti
   const unread = articles.filter(a => !readIds.has(String(a.id)));
 
   if (topTags.length === 0 || unread.length === 0) {
-    return unread.slice(0, limit).map(a => ({
+    return unread.slice(0, safeLimit).map(a => ({
       id: a.id,
       title: a.title,
       tags: safeParseTags(a.tags),
@@ -620,5 +647,5 @@ export async function getRecommendedArticles(limit = 3): Promise<RecommendedArti
     };
   }).sort((a, b) => b.score - a.score);
 
-  return scored.slice(0, limit);
+  return scored.slice(0, safeLimit);
 }

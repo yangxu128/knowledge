@@ -14,6 +14,10 @@ interface SearchResult {
   rank: number;
 }
 
+function escapeHtml(s: string): string {
+  return s.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/"/g, '&quot;').replace(/'/g, '&#39;');
+}
+
 function escapeReg(s: string) { return s.replace(/[.*+?^${}()|[\]\\]/g, '\\$&'); }
 
 export default function SearchPage() {
@@ -40,11 +44,12 @@ export default function SearchPage() {
   }, [data]);
 
   const highlight = useCallback((text: string): string => {
-    if (!debounced || !text) return text;
+    if (!debounced || !text) return escapeHtml(text);
+    const safe = escapeHtml(text);
     const pattern = debounced.split(/\s+/).filter(Boolean).map(escapeReg).join('|');
-    if (!pattern) return text;
+    if (!pattern) return safe;
     const re = new RegExp(`(${pattern})`, 'gi');
-    return text.replace(re, '<mark class="bg-accent-light text-accent px-0.5 rounded">$1</mark>');
+    return safe.replace(re, '<mark class="bg-accent-light text-accent px-0.5 rounded">$1</mark>');
   }, [debounced]);
 
   const results = allResults;

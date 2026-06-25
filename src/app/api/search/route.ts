@@ -1,8 +1,11 @@
 import { NextResponse } from 'next/server';
 import { searchArticles } from '@/lib/db';
 import { getAllArticles } from '@/lib/articles';
+import { getCurrentUser } from '@/lib/auth';
 
 export async function GET(request: Request) {
+  const user = await getCurrentUser();
+  if (!user) return NextResponse.json({ error: '未登录' }, { status: 401 });
   const { searchParams } = new URL(request.url);
   const q = searchParams.get('q') || '';
   if (!q.trim()) return NextResponse.json({ results: [], total: 0, page: 1, pageSize: 10 });

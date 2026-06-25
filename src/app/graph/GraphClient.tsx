@@ -86,8 +86,15 @@ export default function GraphClient({ articles: serverArticles }: { articles: Ar
 
   useEffect(() => {
     fetchData();
-    const timer = setInterval(fetchData, 30000);
-    return () => clearInterval(timer);
+    let timer: ReturnType<typeof setInterval>;
+    const startPolling = () => { timer = setInterval(fetchData, 120000); };
+    const onVisible = () => {
+      if (document.visibilityState === 'visible') { fetchData(); startPolling(); }
+      else { clearInterval(timer); }
+    };
+    startPolling();
+    document.addEventListener('visibilitychange', onVisible);
+    return () => { clearInterval(timer); document.removeEventListener('visibilitychange', onVisible); };
   }, [fetchData]);
 
   const buildData = useCallback(() => {
@@ -258,9 +265,11 @@ export default function GraphClient({ articles: serverArticles }: { articles: Ar
 
     let alpha = nodePosRef.current.size > 0 ? 0.15 : 0.8;
     let hoverIdx = -1;
+    let prevHoverIdx = -1;
     let dragging = false;
     let dragNode = -1;
     let dragOffX = 0, dragOffY = 0;
+    let prevZoom = 0, prevPanX = 0, prevPanY = 0;
     let rotationY = 0;
     let rotationX = 0;
     let autoRotate = is3D;
@@ -539,10 +548,20 @@ export default function GraphClient({ articles: serverArticles }: { articles: Ar
         ctxEl.globalAlpha = 1;
       });
 
+      const cz = zoomRef.current.zoom, cpx = zoomRef.current.panX, cpy = zoomRef.current.panY;
+      const viewChanged = cz !== prevZoom || cpx !== prevPanX || cpy !== prevPanY;
+      prevZoom = cz; prevPanX = cpx; prevPanY = cpy;
+      const hoverChanged = hoverIdx !== prevHoverIdx;
+      prevHoverIdx = hoverIdx;
+      const idle = alpha < 0.001 && !autoRotate && !dragging && !viewChanged && !hoverChanged;
+      if (idle) { rafRef.current = 0; return; }
+
       rafRef.current = requestAnimationFrame(loop);
     }
 
     rafRef.current = requestAnimationFrame(loop);
+
+    function ensureRAF() { if (rafRef.current === 0) rafRef.current = requestAnimationFrame(loop); }
 
     function roundRect(ctx: CanvasRenderingContext2D, x: number, y: number, w: number, h: number, r: number) {
       ctx.moveTo(x + r, y);
@@ -578,6 +597,7 @@ export default function GraphClient({ articles: serverArticles }: { articles: Ar
     }
 
     const onMouseMove = (e: MouseEvent) => {
+      ensureRAF();
       const rect = canvasEl.getBoundingClientRect();
       const mx = e.clientX - rect.left;
       const my = e.clientY - rect.top;
@@ -612,6 +632,7 @@ export default function GraphClient({ articles: serverArticles }: { articles: Ar
     };
 
     const onMouseDown = (e: MouseEvent) => {
+      ensureRAF();
       const rect = canvasEl.getBoundingClientRect();
       const mx = e.clientX - rect.left;
       const my = e.clientY - rect.top;
@@ -646,6 +667,7 @@ export default function GraphClient({ articles: serverArticles }: { articles: Ar
     };
 
     const onWheel = (e: WheelEvent) => {
+      ensureRAF();
       e.preventDefault();
       const delta = e.deltaY > 0 ? 0.9 : 1.1;
       const newZoom = Math.max(0.2, Math.min(5, zoom * delta));
@@ -675,6 +697,7 @@ export default function GraphClient({ articles: serverArticles }: { articles: Ar
     let touchPinchDist = 0;
 
     const onTouchStart = (e: TouchEvent) => {
+      ensureRAF();
       if (e.touches.length === 1) {
         const t = e.touches[0];
         const rect = canvasEl.getBoundingClientRect();
@@ -702,6 +725,7 @@ export default function GraphClient({ articles: serverArticles }: { articles: Ar
     };
 
     const onTouchMove = (e: TouchEvent) => {
+      ensureRAF();
       e.preventDefault();
       if (e.touches.length === 1 && (dragging || panning)) {
         const t = e.touches[0];
@@ -801,7 +825,7 @@ export default function GraphClient({ articles: serverArticles }: { articles: Ar
         <a href="/library" className="absolute top-6 right-6 z-10 bg-white/90 backdrop-blur rounded-xl border border-warm shadow-lg px-4 py-2 text-sm text-slate-600 hover:text-ink hover:bg-white transition-colors flex items-center gap-2">
           <i className="fas fa-arrow-left text-xs"></i>返回知识库
         </a>
-        <canvas ref={canvasRef} className="w-full h-full block" />
+        <canvas ref={canvasRef} role="img" aria-label="知识图谱可视化，显示文章与标签的关联网络" className="w-full h-full block" />
         <div className="absolute top-6 left-6 bg-white/90 backdrop-blur rounded-xl border border-warm shadow-lg overflow-hidden flex">
           <button onClick={() => setIs3D(false)} className={`px-4 py-2 text-xs font-semibold transition-colors ${!is3D ? 'bg-accent text-white' : 'text-slate-500 hover:text-ink'}`}>2D</button>
           <button onClick={() => setIs3D(true)} className={`px-4 py-2 text-xs font-semibold transition-colors ${is3D ? 'bg-accent text-white' : 'text-slate-500 hover:text-ink'}`}>3D</button>

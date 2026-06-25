@@ -7,6 +7,9 @@ import gfm from 'remark-gfm';
 
 const contentDir = path.join(process.cwd(), 'content/knowledge');
 
+let _articlesCache: { data: Omit<Article, 'contentHtml' | 'headings' | 'rawContent'>[]; ts: number } | null = null;
+const ARTICLES_CACHE_TTL = 60 * 1000;
+
 export interface Article {
   slug: string;
   title: string;
@@ -23,9 +26,12 @@ export interface Article {
 }
 
 export function getAllArticles(): Omit<Article, 'contentHtml' | 'headings' | 'rawContent'>[] {
+  if (_articlesCache && Date.now() - _articlesCache.ts < ARTICLES_CACHE_TTL) {
+    return _articlesCache.data;
+  }
   if (!fs.existsSync(contentDir)) return [];
   const files = fs.readdirSync(contentDir).filter(f => f.endsWith('.md'));
-  return files.map(file => {
+  const data = files.map(file => {
     const slug = file.replace(/\.md$/, '');
     const raw = fs.readFileSync(path.join(contentDir, file), 'utf-8');
     const { data } = matter(raw);
@@ -41,7 +47,11 @@ export function getAllArticles(): Omit<Article, 'contentHtml' | 'headings' | 'ra
       draft: data.draft || false,
     };
   }).filter(a => !a.draft).sort((a, b) => b.published.localeCompare(a.published));
+  _articlesCache = { data, ts: Date.now() };
+  return data;
 }
+
+export function invalidateArticlesCache(): void { _articlesCache = null; }
 
 export async function getArticle(slug: string): Promise<Article | null> {
   const decodedSlug = decodeURIComponent(slug);

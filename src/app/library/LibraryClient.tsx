@@ -31,6 +31,7 @@ export default function LibraryClient({ articles }: { articles: ArticleSummary[]
     published: a.published || '',
     author: a.author || 'Admin',
   }));
+  const importedSlugSet = new Set(importedArticles.map(a => a.slug));
 
   const categories = ['全部', ...new Set([...articles, ...importedArticles].map(a => a.category))];
   const allTags = [...new Set([...articles, ...importedArticles].flatMap(a => a.tags))];
@@ -121,7 +122,7 @@ export default function LibraryClient({ articles }: { articles: ArticleSummary[]
               {pagedArticles.map(article => {
                 const c = categoryColors[article.category] || { bg: 'bg-sage-light', text: 'text-sage' };
                 const icon = iconMap[article.tags[0]] || 'fa-file-alt';
-                const isImported = importedArticles.some(ia => ia.slug === article.slug);
+                const isImported = importedSlugSet.has(article.slug);
                 return (
                   <a
                     key={article.slug}
@@ -149,7 +150,7 @@ export default function LibraryClient({ articles }: { articles: ArticleSummary[]
               {pagedArticles.map(article => {
                 const c = categoryColors[article.category] || { bg: 'bg-sage-light', text: 'text-sage' };
                 const icon = iconMap[article.tags[0]] || 'fa-file-alt';
-                const isImported = importedArticles.some(ia => ia.slug === article.slug);
+                const isImported = importedSlugSet.has(article.slug);
                 return (
                   <a
                     key={article.slug}
